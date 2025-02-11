@@ -52,7 +52,7 @@ class Attention(nn.Module):
         # Compute attetion logits
         attention_logits = torch.matmul(queries, rearrange(keys, 'b s d -> b d s')) # multiply queries and keys
         attention_logits = attention_logits * self.scale
-        attention = F.softmax(attention_logits) # softmax on attention
+        attention = F.softmax(attention_logits, dim=-1) # apply softmax to the attention logits
         out = torch.matmul(attention, values) # multiply attention with values
 
         # Rearragne output

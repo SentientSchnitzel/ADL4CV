@@ -73,7 +73,11 @@ def main(embed_dim=128, num_heads=4, num_layers=4, num_epochs=20,
 
     opt = torch.optim.AdamW(lr=lr, params=model.parameters(), weight_decay=weight_decay)
     sch = torch.optim.lr_scheduler.LambdaLR(opt, lambda i: min(i / warmup_steps, 1.0))
-
+    restuls = {
+        'val_loss': [],
+        'val_acc': [],
+        'val_epochs': []
+    }
     # training loop
     for e in range(num_epochs):
         print(f'\n epoch {e}')
@@ -93,6 +97,7 @@ def main(embed_dim=128, num_heads=4, num_layers=4, num_epochs=20,
                 nn.utils.clip_grad_norm_(model.parameters(), gradient_clipping)
             opt.step()
             sch.step()
+        
 
         with torch.no_grad():
             model.eval()
@@ -108,11 +113,33 @@ def main(embed_dim=128, num_heads=4, num_layers=4, num_epochs=20,
                 cor += float((label == out).sum().item())
             acc = cor / tot
             print(f'-- {"validation"} accuracy {acc:.3}')
+            # save results
+            restuls['val_loss'].append(loss.item())
+            restuls['val_acc'].append(acc)
+            restuls['val_epochs'].append(e)
 
+    # save the results dictionary
+    torch.save(restuls, 'results.pth')
 
 if __name__ == "__main__":
     os.environ["CUDA_VISIBLE_DEVICES"]= str(0)
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')  
+
+    if torch.cuda.is_available():
+        device = torch.device('cuda')  # Use CUDA if available
+    elif hasattr(torch, 'device') and torch.backends.mps.is_available():
+        device = torch.device('mps')  # Use MPS if available
+    else:
+        device = torch.device('cpu')  # Default to CPU if neither CUDA nor MPS is available
+
+
+
     print(f"Model will run on {device}")
     set_seed(seed=1)
+    """
+    def main(embed_dim=128, num_heads=4, num_layers=4, num_epochs=20,
+         pos_enc='fixed', pool='max', dropout=0.0, fc_dim=None,
+         batch_size=16, lr=1e-4, warmup_steps=625, 
+         weight_decay=1e-4, gradient_clipping=1
+    ):
+    """
     main()
