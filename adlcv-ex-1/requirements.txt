@@ -1,0 +1,5 @@
+matplotlib
+einops
+seaborn
+tqdm
+torchtext==0.6.0
