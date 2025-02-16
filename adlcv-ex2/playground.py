@@ -34,24 +34,23 @@ def image_to_patches(image, patch_size, image_grid=True):
         HINT: B x c x H x W to B x C x num_patches_h x patch_h x num_patches_w x patch_w
         where H = num_patches_h * patch_h, W=num_patches_w * patch_w to
         """
-        patches = ...
+        patches = rearrange(image, 'b c (nh ph) (nw pw) -> b c nh ph nw pw', ph=patch_h, pw=patch_w)
 
         """
         Create num_patches_h*num_patches_w images of size patch_h x patch_w
         HINT: B x C x num_patches_h x patch_h x num_patches_w x patch_w -> 
             B x (num_patches_h*num_patches_w ) x C x patch_h x patch_w
         """
-        patches = ...
+        patches = rearrange(patches, 'b c nh ph nw pw -> b (nh nw) c ph pw')
     else:
         """
         Again split the image to patches but flatten each patch. 
         Output Dimensions should be: 
         B x (num_patches_h*num_patches_w ) x (C ( patch_h * patch_w)
         """
-        patches = ...
-        patches = ...
-        
+        patches = rearrange(image, 'b c (nh ph) (nw pw) -> b (nh nw) (c ph pw)', ph=patch_h, pw=patch_w)        
         assert patches.size()== (batch_size, num_patches , (patch_h * patch_w * C))
+        
     return patches
 
 
@@ -111,3 +110,5 @@ if __name__ == "__main__":
     plt.ylabel('Position in the sequence')
     plt.gca().invert_yaxis()
     plt.show()
+    
+    print('Done')

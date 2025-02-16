@@ -29,7 +29,10 @@ class Attention(nn.Module):
         self.q_projection = nn.Linear(embed_dim, embed_dim, bias=False)
         self.v_projeciton  = nn.Linear(embed_dim, embed_dim, bias=False)
         self.o_projection = nn.Linear(embed_dim, embed_dim)
-
+        
+        # Initialize an attribute to hold the attention weights.
+        self.last_attention = None
+        
     def forward(self, x):
 
         batch_size, seq_len, embed_dim = x.size()
@@ -47,7 +50,10 @@ class Attention(nn.Module):
         attention_logits = attention_logits * self.scale
         attention = F.softmax(attention_logits, dim=-1)
         out = torch.matmul(attention, values)
-
+        
+        # **Store the attention weights for visualization.**
+        self.last_attention = attention.detach().cpu()  # detach and move to CPU for plotting later
+        
         # Rearragne output
         # from (batch_size x num_head) x seq_len x head_dim to batch_size x seq_len x embed_dim
         out = rearrange(out, '(b h) s d -> b s (h d)', h=self.num_heads, d=self.head_dim)
@@ -115,11 +121,14 @@ class ViT(nn.Module):
         #       2) Stack Rearrange layer with a linear projection layer using nn.Sequential
         #          Consider including LayerNorm layers before and after the linear projection
         ######## insert code here ########
-        #
-        #
-        #
-        #
-        #
+        
+        self.to_patch_embedding = nn.Sequential(
+            # Rearrangement: B x C x H x W -> B x (num_patches) x (C * patch_h * patch_w)
+            Rearrange('b c (nh ph) (nw pw) -> b (nh nw) (c ph pw)', ph=patch_h, pw=patch_w),
+            nn.LayerNorm(patch_dim),
+            nn.Linear(patch_dim, embed_dim),
+            nn.LayerNorm(embed_dim)
+        )
         #################################
 
         if self.pos_enc == 'learnable':

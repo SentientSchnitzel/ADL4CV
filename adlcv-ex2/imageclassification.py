@@ -1,5 +1,5 @@
+import argparse
 import numpy as np
-import os
 import random
 import torch
 from torch import nn
@@ -10,6 +10,8 @@ import torch
 import torchvision
 import torchvision.transforms as transforms
 from vit import ViT
+
+import matplotlib.pyplot as plt
 
 def set_seed(seed=1):
     random.seed(seed)
@@ -59,6 +61,33 @@ def prepare_dataloaders(batch_size, classes=[3, 7]):
     )
     return trainloader, testloader, trainset, testset
 
+def plot_loss(num_epochs, train_loss_history, val_loss_history, val_acc_history):
+    # Plot the training metrics
+    epochs = range(1, num_epochs + 1)
+    plt.figure(figsize=(12, 5))
+
+    # Plot Losses
+    plt.subplot(1, 2, 1)
+    plt.plot(epochs, train_loss_history, 'bo-', label='Train Loss')
+    plt.plot(epochs, val_loss_history, 'ro-', label='Validation Loss')
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+    plt.title('Training and Validation Loss')
+    plt.legend()
+    plt.grid(True)
+
+    # Plot Accuracy
+    plt.subplot(1, 2, 2)
+    plt.plot(epochs, val_acc_history, 'go-', label='Validation Accuracy')
+    plt.xlabel('Epoch')
+    plt.ylabel('Accuracy')
+    plt.title('Validation Accuracy')
+    plt.legend()
+    plt.grid(True)
+
+    plt.tight_layout()
+    plt.savefig("training_metrics.png")
+    plt.show()
 
 def main(image_size=(32,32), patch_size=(4,4), channels=3, 
          embed_dim=128, num_heads=4, num_layers=4, num_classes=2,
@@ -84,52 +113,140 @@ def main(image_size=(32,32), patch_size=(4,4), channels=3,
     opt = torch.optim.AdamW(lr=lr, params=model.parameters(), weight_decay=weight_decay)
     sch = torch.optim.lr_scheduler.LambdaLR(opt, lambda i: min(i / warmup_steps, 1.0))
 
-    # training loop
-    best_val_loss = 1e10
+    # For tracking training metrics
+    train_loss_history = []
+    val_loss_history = []
+    val_acc_history = []
+
+    best_val_loss = float('inf')
     for e in range(num_epochs):
-        print(f'\n epoch {e}')
+        print(f'\nEpoch {e+1}/{num_epochs}')
         model.train()
-        train_loss = 0
-        for image, label in tqdm.tqdm(train_iter):
+        running_train_loss = 0.0
+        train_batches = 0
+
+        # Training loop with tqdm progress bar
+        train_bar = tqdm.tqdm(train_iter, desc="Training", leave=False)
+        for image, label in train_bar:
             if torch.cuda.is_available():
                 image, label = image.to('cuda'), label.to('cuda')
             opt.zero_grad()
             out = model(image)
             loss = loss_function(out, label)
             loss.backward()
-            train_loss += loss.item()
-            # if the total gradient vector has a length > 1, we clip it back down to 1.
+            running_train_loss += loss.item()
+            train_batches += 1
+
             if gradient_clipping > 0.0:
                 nn.utils.clip_grad_norm_(model.parameters(), gradient_clipping)
             opt.step()
             sch.step()
 
-        train_loss/=len(train_iter)
+            # Update tqdm display with current loss
+            train_bar.set_postfix(loss=f"{loss.item():.4f}")
 
-        val_loss = 0
+        avg_train_loss = running_train_loss / train_batches
+        train_loss_history.append(avg_train_loss)
+        
+        # Validation loop: calculate loss and accuracy
+        model.eval()
+        running_val_loss = 0.0
+        val_batches = 0
+        total_samples = 0
+        correct_predictions = 0
+
+        val_bar = tqdm.tqdm(test_iter, desc="Validation", leave=False)
         with torch.no_grad():
-            model.eval()
-            tot, cor= 0.0, 0.0
-            for image, label in test_iter:
+            for image, label in val_bar:
                 if torch.cuda.is_available():
                     image, label = image.to('cuda'), label.to('cuda')
                 out = model(image)
                 loss = loss_function(out, label)
-                val_loss += loss.item()
-                out = out.argmax(dim=1)
-                tot += float(image.size(0))
-                cor += float((label == out).sum().item())
-            acc = cor / tot
-            val_loss /= len(test_iter)
-            print(f'-- train loss {train_loss:.3f} -- validation accuracy {acc:.3f} -- validation loss: {val_loss:.3f}')
-            if val_loss <= best_val_loss:
-                torch.save(model.state_dict(), 'model.pth')
-                best_val_loss = val_loss
+                running_val_loss += loss.item()
+                val_batches += 1
+
+                preds = out.argmax(dim=1)
+                total_samples += image.size(0)
+                correct_predictions += (preds == label).sum().item()
+
+                val_bar.set_postfix(loss=f"{loss.item():.4f}")
+
+        avg_val_loss = running_val_loss / val_batches
+        val_accuracy = correct_predictions / total_samples
+
+        val_loss_history.append(avg_val_loss)
+        val_acc_history.append(val_accuracy)
+
+        print(f"Epoch {e+1}: Train Loss: {avg_train_loss:.4f} | Val Loss: {avg_val_loss:.4f} | Val Accuracy: {val_accuracy:.4f}")
+
+        # Save best model
+        if avg_val_loss < best_val_loss:
+            torch.save(model.state_dict(), 'model.pth')
+            best_val_loss = avg_val_loss
+        
+    plot_loss(num_epochs, train_loss_history, val_loss_history, val_acc_history)
 
 
 if __name__ == "__main__":
-    #os.environ["CUDA_VISIBLE_DEVICES"]= str(0)
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')  
-    print(f"Model will run on {device}")
+    parser = argparse.ArgumentParser(description="Vision Transformer Training")
+    parser.add_argument('--image_size', type=int, nargs=2, default=[32, 32],
+                        help="Image size as two ints: height width")
+    parser.add_argument('--patch_size', type=int, nargs=2, default=[4, 4],
+                        help="Patch size as two ints: height width")
+    parser.add_argument('--channels', type=int, default=3,
+                        help="Number of image channels")
+    parser.add_argument('--embed_dim', type=int, default=128,
+                        help="Embedding dimension")
+    parser.add_argument('--num_heads', type=int, default=4,
+                        help="Number of attention heads")
+    parser.add_argument('--num_layers', type=int, default=4,
+                        help="Number of transformer layers")
+    parser.add_argument('--num_classes', type=int, default=2,
+                        help="Number of output classes")
+    parser.add_argument('--pos_enc', type=str, default='learnable',
+                        help="Type of positional encoding")
+    parser.add_argument('--pool', type=str, default='cls',
+                        help="Pooling method")
+    parser.add_argument('--dropout', type=float, default=0.3,
+                        help="Dropout rate")
+    parser.add_argument('--fc_dim', type=int, default=None,
+                        help="Dimension of fully connected layer")
+    parser.add_argument('--num_epochs', type=int, default=10,
+                        help="Number of training epochs")
+    parser.add_argument('--batch_size', type=int, default=16,
+                        help="Batch size")
+    parser.add_argument('--lr', type=float, default=1e-4,
+                        help="Learning rate")
+    parser.add_argument('--warmup_steps', type=int, default=625,
+                        help="Warmup steps for the scheduler")
+    parser.add_argument('--weight_decay', type=float, default=1e-3,
+                        help="Weight decay")
+    parser.add_argument('--gradient_clipping', type=float, default=1.0,
+                        help="Gradient clipping value")
+    
+    args = parser.parse_args()
+
+    # Convert list arguments to tuples
+    image_size = tuple(args.image_size)
+    patch_size = tuple(args.patch_size)
+
+    print("Starting training...")
     set_seed(seed=1)
-    main()
+    main(image_size=image_size,
+         patch_size=patch_size,
+         channels=args.channels,
+         embed_dim=args.embed_dim,
+         num_heads=args.num_heads,
+         num_layers=args.num_layers,
+         num_classes=args.num_classes,
+         pos_enc=args.pos_enc,
+         pool=args.pool,
+         dropout=args.dropout,
+         fc_dim=args.fc_dim,
+         num_epochs=args.num_epochs,
+         batch_size=args.batch_size,
+         lr=args.lr,
+         warmup_steps=args.warmup_steps,
+         weight_decay=args.weight_decay,
+         gradient_clipping=args.gradient_clipping)
+    print("Training done!")
