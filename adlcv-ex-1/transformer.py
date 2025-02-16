@@ -37,23 +37,21 @@ class Attention(nn.Module):
         """
         Now you have to split the projected keys, queries, and values to multiple heads.
         """
+        
         # First split the embed_dim to num_heads x head_dim
-        keys = rearrange(keys, 'b s (numH Hdim) -> b s numH Hdim', numH=self.num_heads,Hdim=self.head_dim)
+        keys = rearrange(keys, 'b s (h d) -> b h s d', h=self.num_heads)
         # Secondly merge the batch_size with the num_heads
-        keys = rearrange(keys, 'b s numH Hdim -> (b numH) s Hdim', numH=self.num_heads,Hdim=self.head_dim)
+        keys = rearrange(keys, 'b h s d -> (b h) s d')
         
         # HINT repeat the same process for queries and values
-        queries = rearrange(queries, 'b s (numH Hdim) -> b s numH Hdim', numH=self.num_heads,Hdim=self.head_dim)
-        queries = rearrange(queries, 'b s numH Hdim -> (b numH) s Hdim', numH=self.num_heads,Hdim=self.head_dim)
-
-        values = rearrange(values, 'b s (numH Hdim) -> b s numH Hdim', numH=self.num_heads,Hdim=self.head_dim)
-        values = rearrange(values, 'b s numH Hdim -> (b numH) s Hdim', numH=self.num_heads,Hdim=self.head_dim)
-
+        queries = rearrange(queries, 'b s (h d) -> (b h) s d', h=self.num_heads)
+        values = rearrange(values, 'b s (h d) -> (b h) s d', h=self.num_heads)
+        
         # Compute attetion logits
-        attention_logits = torch.matmul(queries, rearrange(keys, 'b s d -> b d s')) # multiply queries and keys
+        attention_logits = torch.bmm(queries, keys.transpose(1, 2)) # multiply queries and keys
         attention_logits = attention_logits * self.scale
-        attention = F.softmax(attention_logits) # softmax on attention
-        out = torch.matmul(attention, values) # multiply attention with values
+        attention = F.softmax(attention_logits, dim=-1) # softmax on attention
+        out = torch.bmm(attention, values) # multiply attention with values
 
         # Rearragne output
         # from (batch_size x num_head) x seq_length x head_dim to batch_size x seq_length x embed_dim
@@ -102,11 +100,11 @@ class PositionalEncoding(nn.Module):
         # get half of the embedding indices
         div_term = torch.arange(0., embed_dim, 2)
         # miltiply each position with -(math.log(10000.0) / embed_dim)
-        div_term = div_term * -(math.log(10000.0) / embed_dim)
+        div_term = torch.arange(0., embed_dim, 2) * -(math.log(10000.0) / embed_dim)
         # compute the exp of div_term
         div_term = torch.exp(div_term)
-        pe[:, ::2] = torch.sin(position/div_term) # HINT use torch.sin to assign to the even-positions the position * div_term
-        pe[:, 1::2] = torch.cos(position/div_term) # HINT use torch.cos to assign to the odd-positions the position * div_term
+        pe[:, 0::2] = torch.sin(position * div_term)  # sin for even indices
+        pe[:, 1::2] = torch.cos(position * div_term)  # cos for odd indices
 
         pe = pe.unsqueeze(0)
         self.register_buffer('pe', pe)

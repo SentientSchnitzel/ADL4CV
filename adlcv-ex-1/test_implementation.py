@@ -3,7 +3,6 @@ import seaborn as sns
 import torch
 from transformer import Attention, PositionalEncoding, TransformerClassifier
 from text_classification import prepare_data_iter, set_seed
-from tqdm import tqdm
 
 def test_attention(batch_size=16, seq_len=512, embed_dim=128, device='cpu'):
 
@@ -59,9 +58,7 @@ if __name__ == '__main__':
     set_seed(5)
     train_iter, _ = prepare_data_iter(batch_size=2)
     batch = next(iter(train_iter))
-
-    pbar = tqdm(range(2))
-    for i in pbar:
+    for i in range(2):
         example = batch.dataset.examples[i]
         review = ' '.join(example.text)
         label = example.label
