@@ -65,7 +65,6 @@ def main(image_size=(32,32), patch_size=(4,4), channels=3,
          pos_enc='learnable', pool='cls', dropout=0.3, fc_dim=None, 
          num_epochs=20, batch_size=16, lr=1e-4, warmup_steps=625,
          weight_decay=1e-3, gradient_clipping=1
-         
     ):
 
     loss_function = nn.CrossEntropyLoss()

@@ -31,27 +31,27 @@ def image_to_patches(image, patch_size, image_grid=True):
         print(f'number of patches: {num_patches}')
         """
         Split H and W to pathces
-        HINT: B x c x H x W to B x C x num_patches_h x patch_h x num_patches_w x patch_w
+        HINT: B x c x H x W --> B x C x num_patches_h x patch_h x num_patches_w x patch_w
         where H = num_patches_h * patch_h, W=num_patches_w * patch_w to
         """
-        patches = ...
+        patches = rearrange(image, 'b c (num_h ph) (num_w pw) -> b c num_h ph num_w pw', ph=patch_h, pw=patch_w)
 
         """
         Create num_patches_h*num_patches_w images of size patch_h x patch_w
         HINT: B x C x num_patches_h x patch_h x num_patches_w x patch_w -> 
             B x (num_patches_h*num_patches_w ) x C x patch_h x patch_w
         """
-        patches = ...
+        patches = rearrange(patches, 'b c num_h ph num_w pw -> b (num_h num_w) c ph pw')
     else:
         """
         Again split the image to patches but flatten each patch. 
         Output Dimensions should be: 
-        B x (num_patches_h*num_patches_w ) x (C ( patch_h * patch_w)
+        B x (num_patches_h*num_patches_w ) x (C * patch_h * patch_w)
         """
-        patches = ...
-        patches = ...
-        
-        assert patches.size()== (batch_size, num_patches , (patch_h * patch_w * C))
+        patches = rearrange(image, 'b c (num_h ph) (num_w pw) -> b c num_h ph num_w pw', ph=patch_h, pw=patch_w)
+        patches = rearrange(patches, 'b c num_h ph num_w pw -> b (num_h num_w) (c ph pw)') # flattened patches
+
+        assert patches.size()== (batch_size, num_patches, (patch_h * patch_w * C))
     return patches
 
 
