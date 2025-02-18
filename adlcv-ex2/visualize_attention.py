@@ -16,56 +16,52 @@ def denormalize(image_tensor):
     image = image_tensor * 0.5 + 0.5
     return image.clamp(0, 1)
 
-def get_attention_rollout(model):
+def get_attention_rollout(att_maps):
     """
-    Computes the attention rollout given the attention weights stored in
-    each transformer block. Assumes that a forward pass on a single image
-    (batch size 1) has been performed so that each attention module's
-    `last_attention` attribute is populated.
-    Returns a 2D numpy array (mask) of shape (grid_size, grid_size).
-    """
-    att_mats = []
-    # Loop through each transformer block and grab its attention weights.
-    for block in model.transformer_blocks:
-        # Each block’s attention.last_attention is of shape:
-        #   (batch_size * num_heads, seq_len, seq_len)
-        attn = block.attention.last_attention  # (num_heads, seq_len, seq_len) since batch=1
-        # Reshape to add an explicit batch dimension: (1, num_heads, seq_len, seq_len)
-        attn = attn.unsqueeze(0)
-        att_mats.append(attn)
+    att_maps: a Python list of length L (number of Transformer blocks).
+              Each element is a tensor of shape (num_heads, seq_len, seq_len).
     
-    # Stack to shape (num_layers, 1, num_heads, seq_len, seq_len) then squeeze batch dim:
-    att_mats = torch.cat(att_mats, dim=0).squeeze(1)  # shape: (L, num_heads, seq_len, seq_len)
-    # Average across heads → (L, seq_len, seq_len)
+    Returns:
+        mask (H x W) as a NumPy array, where H x W = (seq_len - 1), typically
+        because one token is the [CLS] token and the rest are patches.
+    """
+    # 1) Stack into shape (L, num_heads, seq_len, seq_len)
+    att_mats = torch.stack(att_maps, dim=0)  
+
+    # 2) Average over heads => shape (L, seq_len, seq_len)
     att_mats = att_mats.mean(dim=1)
-    
-    # Add identity (for residual connections) and re-normalize for each layer.
-    L, N, _ = att_mats.shape  # N = seq_len
-    identity = torch.eye(N).to(att_mats.device)
-    aug_att = att_mats + identity
-    aug_att = aug_att / aug_att.sum(dim=-1, keepdim=True)
-    
-    # Recursively multiply the attention matrices.
-    joint_att = torch.zeros(aug_att.size())
-    joint_att[0] = aug_att[0]
-    
-    for n in range(1, aug_att.size(0)):
-        joint_att[n] = torch.matmul(aug_att[n], joint_att[n - 1])
-    
-    v = joint_att[-1]
-    grid_size = int(np.sqrt(aug_att.size(-1)))
-    mask = v[0, 1:].reshape(grid_size, grid_size).detach().numpy()
-    
+
+    # 3) Add identity and normalize each matrix
+    L, N, _ = att_mats.shape  # L = #layers, N = seq_len
+    I = torch.eye(N, device=att_mats.device)
+    att_mats = att_mats + I[None, :, :]                # shape: (L, N, N)
+    att_mats = att_mats / att_mats.sum(dim=-1, keepdim=True)  # normalize row-wise
+
+    # 4) Recursively multiply the attention maps: shape => (N, N)
+    joint_att = att_mats[0]  # first block
+    for i in range(1, L):
+        joint_att = att_mats[i] @ joint_att  # (N, N)
+
+    # 5) The final matrix joint_att is (N, N).
+    #    Often we consider row 0 as the "CLS -> patches" attention distribution.
+    #    The first token is CLS, so we skip index 0 from the final distribution
+    #    and reshape the remainder into a patch grid.
+    v = joint_att[0]                 # shape (N,)
+    grid_size = int(np.sqrt(N - 1))  # skip the CLS token => N-1 patch tokens
+    mask = v[1:].reshape(grid_size, grid_size)  # shape: (grid_size, grid_size)
+
+    # Move to CPU and NumPy
+    mask = mask.detach().cpu().numpy()
     return mask
 
-def visualize_attention():
+def visualize_attention(runname):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # --- Initialize the Model (with the same hyperparameters as in training) ---
     image_size = (32, 32)
-    patch_size = (4, 4)
+    patch_size = (8, 8)
     channels = 3
-    embed_dim = 128
+    embed_dim = 256
     num_heads = 4
     num_layers = 4
     num_classes = 2
@@ -78,8 +74,9 @@ def visualize_attention():
                 embed_dim=embed_dim, num_heads=num_heads, num_layers=num_layers,
                 pos_enc=pos_enc, pool=pool, dropout=dropout, fc_dim=fc_dim,
                 num_classes=num_classes)
+    
     # Load your trained model weights.
-    model.load_state_dict(torch.load('model.pth', map_location=device))
+    model.load_state_dict(torch.load(f'models/{runname}_model.pth', map_location=device))
     model.to(device)
     model.eval()
 
@@ -104,9 +101,10 @@ def visualize_attention():
         x = img_tensor.unsqueeze(0).to(device)
         with torch.no_grad():
             _ = model(x)
+            att_maps = model.get_attention_maps()
         
         # Compute the attention rollout mask.
-        mask = get_attention_rollout(model)  # shape: (grid_size, grid_size)
+        mask = get_attention_rollout(att_maps)  
         H, W, _ = img_np.shape
         mask_resized = cv2.resize(mask / mask.max(), (W, H))[..., np.newaxis]
 
@@ -145,8 +143,9 @@ def visualize_attention():
     
     fig.tight_layout()
     fig2.tight_layout()
-    fig.savefig("attention_visualization_1.png")
-    fig2.savefig("attention_visualization_2.png")
+    fig.savefig(f"plots/{runname}_attention_visualization_1.png")
+    fig2.savefig(f"plots/{runname}_attention_visualization_2.png")
 
 if __name__ == "__main__":
-    visualize_attention()
+    runname = "aug_e20_ed256_p8"
+    visualize_attention(runname)

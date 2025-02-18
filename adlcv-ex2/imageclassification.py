@@ -1,3 +1,4 @@
+import os
 import argparse
 import numpy as np
 import random
@@ -10,8 +11,6 @@ import torch
 import torchvision
 import torchvision.transforms as transforms
 from vit import ViT
-
-import matplotlib.pyplot as plt
 
 def set_seed(seed=1):
     random.seed(seed)
@@ -32,9 +31,13 @@ def select_two_classes_from_cifar10(dataset, classes):
 
 def prepare_dataloaders(batch_size, classes=[3, 7]):
     # TASK: Experiment with data augmentation
-    train_transform = transforms.Compose([transforms.ToTensor(),
-                                   transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]
-    )
+    train_transform = transforms.Compose([
+        transforms.RandomHorizontalFlip(p=0.5),  # Randomly flip images horizontally
+        transforms.RandomCrop(32, padding=4),   # Randomly crop with padding
+        transforms.RandomRotation(15),          # Random rotation between -15 to 15 degrees
+        transforms.ToTensor(),
+        transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))  # Normalize to [-1,1] range
+    ])
 
     test_transform = transforms.Compose([transforms.ToTensor(),
                                    transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]
@@ -61,41 +64,11 @@ def prepare_dataloaders(batch_size, classes=[3, 7]):
     )
     return trainloader, testloader, trainset, testset
 
-def plot_loss(num_epochs, train_loss_history, val_loss_history, val_acc_history):
-    # Plot the training metrics
-    epochs = range(1, num_epochs + 1)
-    plt.figure(figsize=(12, 5))
-
-    # Plot Losses
-    plt.subplot(1, 2, 1)
-    plt.plot(epochs, train_loss_history, 'bo-', label='Train Loss')
-    plt.plot(epochs, val_loss_history, 'ro-', label='Validation Loss')
-    plt.xlabel('Epoch')
-    plt.ylabel('Loss')
-    plt.title('Training and Validation Loss')
-    plt.legend()
-    plt.grid(True)
-
-    # Plot Accuracy
-    plt.subplot(1, 2, 2)
-    plt.plot(epochs, val_acc_history, 'go-', label='Validation Accuracy')
-    plt.xlabel('Epoch')
-    plt.ylabel('Accuracy')
-    plt.title('Validation Accuracy')
-    plt.legend()
-    plt.grid(True)
-
-    plt.tight_layout()
-    plt.savefig("training_metrics.png")
-    plt.show()
-
 def main(image_size=(32,32), patch_size=(4,4), channels=3, 
          embed_dim=128, num_heads=4, num_layers=4, num_classes=2,
          pos_enc='learnable', pool='cls', dropout=0.3, fc_dim=None, 
          num_epochs=20, batch_size=16, lr=1e-4, warmup_steps=625,
-         weight_decay=1e-3, gradient_clipping=1
-         
-    ):
+         weight_decay=1e-3, gradient_clipping=1, runname='vit'):
 
     loss_function = nn.CrossEntropyLoss()
 
@@ -178,15 +151,25 @@ def main(image_size=(32,32), patch_size=(4,4), channels=3,
         val_acc_history.append(val_accuracy)
 
         print(f"Epoch {e+1}: Train Loss: {avg_train_loss:.4f} | Val Loss: {avg_val_loss:.4f} | Val Accuracy: {val_accuracy:.4f}")
-
-        # Save best model
-        if avg_val_loss < best_val_loss:
-            torch.save(model.state_dict(), 'model.pth')
-            best_val_loss = avg_val_loss
         
-    plot_loss(num_epochs, train_loss_history, val_loss_history, val_acc_history)
+        # Save best model
+        os.makedirs("models", exist_ok=True)
+        if avg_val_loss < best_val_loss:
+            torch.save(model.state_dict(), f'models/{args.runname}_model.pth')
+            best_val_loss = avg_val_loss
 
+        os.makedirs("results", exist_ok=True)
+        # Save training metrics in separate txt files
+        with open(f'results/{args.runname}_train_loss.txt', 'w') as f:
+            f.write(f"{train_loss_history}\n")
 
+        with open(f'results/{args.runname}_val_loss.txt', 'w') as f:
+            f.write(f"{val_loss_history}\n")
+
+        with open(f'results/{args.runname}_val_accuracy.txt', 'w') as f:
+            f.write(f"{val_acc_history}\n")
+
+            
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Vision Transformer Training")
     parser.add_argument('--image_size', type=int, nargs=2, default=[32, 32],
@@ -223,6 +206,7 @@ if __name__ == "__main__":
                         help="Weight decay")
     parser.add_argument('--gradient_clipping', type=float, default=1.0,
                         help="Gradient clipping value")
+    parser.add_argument('--runname', type=str, default='vit', help="Name of the run")
     
     args = parser.parse_args()
 
@@ -248,5 +232,6 @@ if __name__ == "__main__":
          lr=args.lr,
          warmup_steps=args.warmup_steps,
          weight_decay=args.weight_decay,
-         gradient_clipping=args.gradient_clipping)
+         gradient_clipping=args.gradient_clipping,
+         runname = args.runname)
     print("Training done!")

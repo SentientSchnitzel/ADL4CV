@@ -30,8 +30,7 @@ class Attention(nn.Module):
         self.v_projeciton  = nn.Linear(embed_dim, embed_dim, bias=False)
         self.o_projection = nn.Linear(embed_dim, embed_dim)
         
-        # Initialize an attribute to hold the attention weights.
-        self.last_attention = None
+        self.attention_map = None
         
     def forward(self, x):
 
@@ -51,9 +50,7 @@ class Attention(nn.Module):
         attention = F.softmax(attention_logits, dim=-1)
         out = torch.matmul(attention, values)
         
-        # **Store the attention weights for visualization.**
-        self.last_attention = attention.detach().cpu()  # detach and move to CPU for plotting later
-        
+        self.attention_map = attention.detach()
         # Rearragne output
         # from (batch_size x num_head) x seq_len x head_dim to batch_size x seq_len x embed_dim
         out = rearrange(out, '(b h) s d -> b s (h d)', h=self.num_heads, d=self.head_dim)
@@ -176,3 +173,10 @@ class ViT(nn.Module):
             x = x[:, 0]
 
         return self.classifier(x)
+    
+    def get_attention_maps(self):
+        all_attentions = []
+        for block in self.transformer_blocks:
+            attn = block.attention.attention_map
+            all_attentions.append(attn)
+        return all_attentions

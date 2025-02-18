@@ -1,4 +1,7 @@
 matplotlib
 einops
 seaborn
-tqdm
+tqdm 
+matplotlib
+torch
+torchvision
