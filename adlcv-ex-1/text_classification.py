@@ -6,6 +6,7 @@ from torch import nn
 import torch.nn.functional as F
 from torchtext import data, datasets, vocab
 import tqdm
+import json
 
 from transformer import TransformerClassifier, to_device
 
@@ -74,10 +75,17 @@ def main(embed_dim=128, num_heads=4, num_layers=4, num_epochs=20,
     opt = torch.optim.AdamW(lr=lr, params=model.parameters(), weight_decay=weight_decay)
     sch = torch.optim.lr_scheduler.LambdaLR(opt, lambda i: min(i / warmup_steps, 1.0))
 
+    training_loss = []
+    training_acc = []
+    validation_loss = []
+    validation_acc = []
+
     # training loop
     for e in range(num_epochs):
         print(f'\n epoch {e}')
         model.train()
+        running_loss = []
+        tot, cor= 0.0, 0.0
         for batch in tqdm.tqdm(train_iter):
             opt.zero_grad()
             input_seq = batch.text[0]
@@ -94,20 +102,41 @@ def main(embed_dim=128, num_heads=4, num_layers=4, num_epochs=20,
             opt.step()
             sch.step()
 
+            # metrics
+            running_loss.append(loss.item())
+            tot += float(input_seq.size(0))
+            cor += float((label == out.argmax(dim=1)).sum().item())
+        b_loss = np.mean(running_loss)
+        acc = cor / tot
+        training_loss.append(b_loss)
+        training_acc.append(acc)
+        
+
         with torch.no_grad():
             model.eval()
+            running_loss = []
             tot, cor= 0.0, 0.0
-            for batch in test_iter:
+            for batch in tqdm.tqdm(test_iter):
                 input_seq = batch.text[0]
                 batch_size, seq_len = input_seq.size()
                 label = batch.label - 1
                 if seq_len > MAX_SEQ_LEN:
                     input_seq = input_seq[:, :MAX_SEQ_LEN]
-                out = model(input_seq).argmax(dim=1)
+                out = model(input_seq)
+                loss = loss_function(out, label)
+                running_loss.append(loss.item())
                 tot += float(input_seq.size(0))
-                cor += float((label == out).sum().item())
+                cor += float((label == out.argmax(dim=1)).sum().item())
+            b_loss = np.mean(running_loss)
             acc = cor / tot
-            print(f'-- {"validation"} accuracy {acc:.3}')
+            validation_loss.append(b_loss)
+            validation_acc.append(acc)
+            print(f'-- {"validation"} loss {b_loss:.3} - {"validation"} accuracy {acc:.3}')
+
+    return {'train_loss': training_loss, 
+            'train_acc': training_acc, 
+            'val_loss': validation_loss, 
+            'val_acc': validation_acc}
 
 
 if __name__ == "__main__":
@@ -115,4 +144,6 @@ if __name__ == "__main__":
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')  
     print(f"Model will run on {device}")
     set_seed(seed=1)
-    main()
+    history = main(num_epochs=1)
+    print(history)
+    json.dump(history, open('history_ex1.json', 'w'))
