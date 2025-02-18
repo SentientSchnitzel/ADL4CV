@@ -48,19 +48,18 @@ class MaskedAttention(nn.Module):
 
         ####################### insert code here #########################################
         # Compute raw attention logits and scale them
-        attention_logits = ...
-        attention_logits = ...
-
+        attention_logits = torch.matmul(queries, rearrange(keys, '(b h) s d -> (b h) d s', b=batch_size)) # we actually just need to transpose the keys
+        attention_logits = attention_logits * self.scale
         # Create a causal mask (upper-triangular with zeros on the diagonal)
         # so that each token can only attend to tokens at positions <= its own. HINT. torch.triu()
-        mask = ...
+        mask = torch.triu(torch.ones(seq_length, seq_length), diagonal=1).to(x.device)
 
         # Expand the mask to match attention_logits' shape: (batch_size * num_heads, seq_length, seq_length). HINT: torch.masked_fill()
-        attention_logits = ...
+        attention_logits = attention_logits.masked_fill(mask == 1, float('-inf'))
 
         # Compute attention probabilities and weighted values
-        attention = ...
-        out = ...
+        attention = F.softmax(attention_logits, dim=-1)
+        out = torch.matmul(attention, values)
         ###################################################################################
 
         # Rearrange output
