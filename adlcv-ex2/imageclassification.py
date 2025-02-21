@@ -29,40 +29,45 @@ def select_two_classes_from_cifar10(dataset, classes):
     dataset.data = dataset.data[idx]
     return dataset
 
-def prepare_dataloaders(batch_size, classes=[3, 7]):
+def prepare_dataloaders(batch_size, val_split=0.2, classes=[3, 7]):
     # TASK: Experiment with data augmentation
     train_transform = transforms.Compose([
         transforms.RandomHorizontalFlip(p=0.5),  # Randomly flip images horizontally
-        transforms.RandomCrop(32, padding=4),   # Randomly crop with padding
-        transforms.RandomRotation(15),          # Random rotation between -15 to 15 degrees
+        transforms.RandomRotation(15),          # Random rotation between -15 to 15 degrees        
         transforms.ToTensor(),
         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))  # Normalize to [-1,1] range
     ])
 
-    test_transform = transforms.Compose([transforms.ToTensor(),
-                                   transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]
-    )
+    test_transform = transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+    ])
 
     trainset = torchvision.datasets.CIFAR10(root='./data', train=True,
                                             download=True, transform=train_transform)
     testset = torchvision.datasets.CIFAR10(root='./data', train=False,
                                            download=True, transform=test_transform)
 
-    # select two classes 
+    # Select two classes 
     trainset = select_two_classes_from_cifar10(trainset, classes=classes)
     testset = select_two_classes_from_cifar10(testset, classes=classes)
 
-    # reduce dataset size
+    # Reduce dataset size
     trainset, _ = torch.utils.data.random_split(trainset, [5000, 5000])
     testset, _ = torch.utils.data.random_split(testset, [1000, 1000])
 
-    trainloader = torch.utils.data.DataLoader(trainset, batch_size=batch_size,
-                                              shuffle=True
-    )
-    testloader = torch.utils.data.DataLoader(testset, batch_size=batch_size,
-                                              shuffle=False
-    )
-    return trainloader, testloader, trainset, testset
+    # Split trainset into train and validation sets
+    val_size = int(val_split * len(trainset))
+    train_size = len(trainset) - val_size
+    train_subset, val_subset = torch.utils.data.random_split(trainset, [train_size, val_size])
+
+    # Create DataLoaders
+    trainloader = torch.utils.data.DataLoader(train_subset, batch_size=batch_size, shuffle=True)
+    valloader = torch.utils.data.DataLoader(val_subset, batch_size=batch_size, shuffle=False)
+    testloader = torch.utils.data.DataLoader(testset, batch_size=batch_size, shuffle=False)
+
+    return trainloader, valloader, testloader, train_subset, val_subset, testset
+
 
 def main(image_size=(32,32), patch_size=(4,4), channels=3, 
          embed_dim=128, num_heads=4, num_layers=4, num_classes=2,
@@ -72,7 +77,7 @@ def main(image_size=(32,32), patch_size=(4,4), channels=3,
 
     loss_function = nn.CrossEntropyLoss()
 
-    train_iter, test_iter, _, _ = prepare_dataloaders(batch_size=batch_size)
+    train_iter, val_iter, test_iter, _, _, _ = prepare_dataloaders(batch_size=batch_size)
 
     model = ViT(image_size=image_size, patch_size=patch_size, channels=channels, 
                 embed_dim=embed_dim, num_heads=num_heads, num_layers=num_layers,
@@ -128,7 +133,7 @@ def main(image_size=(32,32), patch_size=(4,4), channels=3,
         total_samples = 0
         correct_predictions = 0
 
-        val_bar = tqdm.tqdm(test_iter, desc="Validation", leave=False)
+        val_bar = tqdm.tqdm(val_iter, desc="Validation", leave=False)
         with torch.no_grad():
             for image, label in val_bar:
                 if torch.cuda.is_available():
@@ -169,7 +174,38 @@ def main(image_size=(32,32), patch_size=(4,4), channels=3,
         with open(f'results/{args.runname}_val_accuracy.txt', 'w') as f:
             f.write(f"{val_acc_history}\n")
 
+    # Evaluate on test set
+    test_correct = 0
+    test_total = 0
+    test_loss = 0.0
+    test_batches = 0
+
+    test_bar = tqdm.tqdm(test_iter, desc="Testing", leave=False)
+    with torch.no_grad():
+        for image, label in test_bar:
+            if torch.cuda.is_available():
+                image, label = image.to('cuda'), label.to('cuda')
             
+            out = model(image)
+            loss = loss_function(out, label)
+            test_loss += loss.item()
+            test_batches += 1
+
+            preds = out.argmax(dim=1)
+            test_correct += (preds == label).sum().item()
+            test_total += image.size(0)
+
+            test_bar.set_postfix(loss=f"{loss.item():.4f}")
+
+    avg_test_loss = test_loss / test_batches
+    test_accuracy = test_correct / test_total
+
+    print(f"Test Loss: {avg_test_loss:.4f} | Test Accuracy: {test_accuracy:.4f}")
+
+    # Save test accuracy
+    with open(f'results/{runname}_test_accuracy.txt', 'w') as f:
+        f.write(f"Test Accuracy: {test_accuracy:.4f}\n")
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Vision Transformer Training")
     parser.add_argument('--image_size', type=int, nargs=2, default=[32, 32],
@@ -186,7 +222,7 @@ if __name__ == "__main__":
                         help="Number of transformer layers")
     parser.add_argument('--num_classes', type=int, default=2,
                         help="Number of output classes")
-    parser.add_argument('--pos_enc', type=str, default='learnable',
+    parser.add_argument('--pos_enc', type=str, default='learnable', #fixed
                         help="Type of positional encoding")
     parser.add_argument('--pool', type=str, default='cls',
                         help="Pooling method")
@@ -194,7 +230,7 @@ if __name__ == "__main__":
                         help="Dropout rate")
     parser.add_argument('--fc_dim', type=int, default=None,
                         help="Dimension of fully connected layer")
-    parser.add_argument('--num_epochs', type=int, default=10,
+    parser.add_argument('--num_epochs', type=int, default=20,
                         help="Number of training epochs")
     parser.add_argument('--batch_size', type=int, default=16,
                         help="Batch size")
