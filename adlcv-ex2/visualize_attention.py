@@ -16,7 +16,7 @@ def denormalize(image_tensor):
     image = image_tensor * 0.5 + 0.5
     return image.clamp(0, 1)
 
-def get_attention_rollout(att_maps):
+def get_attention_rollout(att_maps, use_cls):
     """
     att_maps: a Python list of length L (number of Transformer blocks).
               Each element is a tensor of shape (num_heads, seq_len, seq_len).
@@ -47,26 +47,31 @@ def get_attention_rollout(att_maps):
     #    The first token is CLS, so we skip index 0 from the final distribution
     #    and reshape the remainder into a patch grid.
     v = joint_att[0]                 # shape (N,)
-    grid_size = int(np.sqrt(N - 1))  # skip the CLS token => N-1 patch tokens
-    mask = v[1:].reshape(grid_size, grid_size)  # shape: (grid_size, grid_size)
+    if use_cls:
+        grid_size = int(np.sqrt(N - 1))  # skip the CLS token => N-1 patch tokens
+        mask = v[1:].reshape(grid_size, grid_size)  # shape: (grid_size, grid_size)
+    else:
+        # Use all tokens if no CLS token is used (mean pooling)
+        grid_size = int(np.sqrt(N))
+        mask = v.reshape(grid_size, grid_size)
 
     # Move to CPU and NumPy
     mask = mask.detach().cpu().numpy()
     return mask
 
-def visualize_attention(runname):
+def visualize_attention(runname, use_cls):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # --- Initialize the Model (with the same hyperparameters as in training) ---
     image_size = (32, 32)
-    patch_size = (8, 8)
+    patch_size = (4, 4)
     channels = 3
     embed_dim = 256
-    num_heads = 4
+    num_heads = 8
     num_layers = 4
     num_classes = 2
     pos_enc = 'learnable'
-    pool = 'cls'
+    pool = 'mean'
     dropout = 0.3
     fc_dim = None
 
@@ -76,21 +81,21 @@ def visualize_attention(runname):
                 num_classes=num_classes)
     
     # Load your trained model weights.
-    model.load_state_dict(torch.load(f'models/{runname}_model.pth', map_location=device))
+    model.load_state_dict(torch.load(f'models/{runname}.pth', map_location=device))
     model.to(device)
     model.eval()
 
     # --- Prepare Data and Select Images ---
     batch_size = 16
-    _, _, _, testset = prepare_dataloaders(batch_size=batch_size)
+    trainloader, valloader, testloader, train_subset, val_subset, testset = prepare_dataloaders(batch_size=batch_size)
     
     # Randomly select 5 images from the test set.
-    indices = random.sample(range(len(testset)), 5)
+    indices = random.sample(range(len(testset)), 2)
     selected_images = [testset[i][0] for i in indices]  # each is a tensor of shape (C,H,W)
 
     # --- Create a Figure to Display the Results ---
-    fig, axes = plt.subplots(nrows=5, ncols=2, figsize=(8, 20))
-    fig2, axes2 = plt.subplots(nrows=5, ncols=2, figsize=(8, 20))
+    fig, axes = plt.subplots(nrows=2, ncols=3, figsize=(6, 5))
+    fig2, axes2 = plt.subplots(nrows=2, ncols=3, figsize=(6, 5))
     
     for i, img_tensor in enumerate(selected_images):
         # Denormalize and convert image to numpy (H, W, C) for display.
@@ -104,7 +109,7 @@ def visualize_attention(runname):
             att_maps = model.get_attention_maps()
         
         # Compute the attention rollout mask.
-        mask = get_attention_rollout(att_maps)  
+        mask = get_attention_rollout(att_maps, use_cls)  
         H, W, _ = img_np.shape
         mask_resized = cv2.resize(mask / mask.max(), (W, H))[..., np.newaxis]
 
@@ -113,14 +118,13 @@ def visualize_attention(runname):
         overlay = (mask_resized * (img_np * 255)).astype("uint8")
         original_display = (img_np * 255).astype("uint8")
         
-        axes[i, 0].set_title('Original')
-        axes[i, 1].set_title('Attention Map')
+        axes[i, 0].set_title('Input Image')
+        axes[i, 1].set_title('Attention')
 
         axes[i, 0].imshow(original_display)
         axes[i, 0].axis("off")
         axes[i, 1].imshow(overlay)
         axes[i, 1].axis("off")
-        
         
         # Create a heatmap (using OpenCV’s COLORMAP_JET) from the mask.
         heatmap = cv2.applyColorMap(np.uint8(255 * mask_resized), cv2.COLORMAP_JET)
@@ -130,22 +134,16 @@ def visualize_attention(runname):
         # Here we blend 50% of the original image with 50% of the heatmap.
         overlay = 0.5 * (img_np * 255) + 0.5 * heatmap
         overlay = np.clip(overlay, 0, 255).astype(np.uint8)
-        
-        # Plot the original image.
-        axes2[i, 0].imshow(img_np)
-        axes2[i, 0].axis('off')
-        axes2[i, 0].set_title("Original Image")
-        
+                
         # Plot the attention overlay.
-        axes2[i, 1].imshow(overlay)
-        axes2[i, 1].axis('off')
-        axes2[i, 1].set_title("Attention Overlay")
+        axes[i, 2].imshow(overlay)
+        axes[i, 2].axis('off')
+        axes[i, 2].set_title("Attention")
     
     fig.tight_layout()
-    fig2.tight_layout()
     fig.savefig(f"plots/{runname}_attention_visualization_1.png")
-    fig2.savefig(f"plots/{runname}_attention_visualization_2.png")
-
+    plt.close(fig)
+    
 if __name__ == "__main__":
-    runname = "aug_e20_ed256_p8"
-    visualize_attention(runname)
+    runname = "exp9"
+    visualize_attention(runname, use_cls=False)
