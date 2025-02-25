@@ -1,0 +1,7 @@
+matplotlib
+einops
+seaborn
+tqdm 
+matplotlib
+torch
+torchvision

@@ -1,12 +1,18 @@
 /.data
 /.venv
-adlcv-ex2/model.pth
-adlcv/
+env*
 
-adlcv-ex3/*.pt
-adlcv-ex3/checkpoints/
-adlcv-ex3/__pycache__/
+adlcv-ex1.3/*.pt
+adlcv-ex1.3/checkpoints/
+adlcv-ex1.3/__pycache__/
 
-adlcv-ex2/data/
-adlcv-ex2/models/
-adlcv-ex2/__pycache__/
+adlcv-ex1.2/data/
+adlcv-ex1.2/models/
+adlcv-ex1.2/__pycache__/
+
+adlcv-ex2.1/__pycache__/
+
+adlcv-ex2.1/models*
+adlcv-ex2.1/dataset*
+
+adlcv-ex2.1/runs/*
