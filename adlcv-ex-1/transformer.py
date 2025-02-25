@@ -52,7 +52,7 @@ class Attention(nn.Module):
         # Compute attetion logits
         attention_logits = torch.matmul(queries, rearrange(keys, 'b s d -> b d s')) # multiply queries and keys
         attention_logits = attention_logits * self.scale
-        attention = F.softmax(attention_logits) # softmax on attention
+        attention = F.softmax(attention_logits, dim=1) # softmax on attention
         out = torch.matmul(attention, values) # multiply attention with values
 
         # Rearragne output
@@ -145,7 +145,8 @@ class TransformerClassifier(nn.Module):
 
         # Initialize cls token parameter
         if self.pool == 'cls':
-            #self.cls_token = ... # Institate an nn.Parameter with size: 1,1,embed_dim
+            # Institate an nn.Parameter with size: 1,1,embed_dim
+            self.cls_token = nn.Parameter(torch.randn(1, 1, embed_dim))
             max_seq_len +=1
         
         if self.pos_enc == 'fixed':
@@ -171,7 +172,8 @@ class TransformerClassifier(nn.Module):
         ####################### insert code here #######################
         if self.pool == 'cls':
             # HINT: repeat the cls token of the batch dimension
-            pass
+            cls_token = self.cls_token.repeat(batch_size, 1, 1)  # (batch_size, 1, embed_dim)
+            tokens = torch.cat([cls_token, tokens], dim=1)  # (batch_size, seq_length + 1, embed_dim)
         ################################################################
 
         x = self.positional_encoding(tokens)
@@ -187,7 +189,7 @@ class TransformerClassifier(nn.Module):
         ####################### insert code here #######################
         elif self.pool == 'cls':
             # HINT: get the first output token of the transfomer.
-            pass
+            x = x[:, 0, :]
         ################################################################
 
         return self.classifier(x)

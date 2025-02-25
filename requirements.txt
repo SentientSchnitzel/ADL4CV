@@ -1,0 +1,10 @@
+numpy
+matplotlib
+seaborn
+tqdm
+torch
+torchvision
+torchtext==0.6.0
+datasets
+transformers
+einops
