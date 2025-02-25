@@ -1,3 +1,6 @@
-/.data
-/.venv
+.data
+.venv
 adlcv/
+.adlcv
+
+__pycache__
