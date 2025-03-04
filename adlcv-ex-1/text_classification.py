@@ -133,6 +133,7 @@ def main(embed_dim=128, num_heads=4, num_layers=4, num_epochs=20,
         running_val_loss = 0.0
         val_samples = 0
         tot, cor = 0.0, 0.0
+        all_predictions = []
         val_bar = tqdm.tqdm(test_iter, desc="Validation", leave=False)
         with torch.no_grad():
             for batch in val_bar:
@@ -147,6 +148,7 @@ def main(embed_dim=128, num_heads=4, num_layers=4, num_epochs=20,
                 val_samples += input_seq.size(0)
                 
                 predictions = out.argmax(dim=1)
+                all_predictions.append(predictions.cpu())
                 tot += input_seq.size(0)
                 cor += (label == predictions).sum().item()
                 
@@ -155,6 +157,10 @@ def main(embed_dim=128, num_heads=4, num_layers=4, num_epochs=20,
         avg_val_loss = running_val_loss / val_samples
         val_losses.append(avg_val_loss)
         acc = cor / tot
+        # After processing all batches, compute unique predicted classes
+        unique_predictions = torch.unique(torch.cat(all_predictions))
+        print("Unique predicted classes in validation:", unique_predictions.tolist())
+    
         
         print(f"Epoch {e+1}: Training Loss: {avg_train_loss:.4f} | Validation Loss: {avg_val_loss:.4f} | Validation Accuracy: {acc:.3f}")
 
@@ -166,7 +172,7 @@ if __name__ == '__main__':
     parser.add_argument('--embed_dim', type=int, default=128, help='Embedding dimension size')
     parser.add_argument('--num_heads', type=int, default=4, help='Number of attention heads')
     parser.add_argument('--num_layers', type=int, default=4, help='Number of Transformer layers')
-    parser.add_argument('--num_epochs', type=int, default=10, help='Number of training epochs')
+    parser.add_argument('--num_epochs', type=int, default=50, help='Number of training epochs')
     parser.add_argument('--pos_enc', type=str, default='fixed', help='Positional encoding type')
     parser.add_argument('--pool', type=str, default='max', help='Pooling type (e.g., "max" or "avg")')
     parser.add_argument('--dropout', type=float, default=0.0, help='Dropout rate')
