@@ -69,7 +69,7 @@ def train(device='cpu', T=500, img_size=16, input_channels=3, channels=32, time_
     diffusion = Diffusion(img_size=img_size, T=T, beta_start=1e-4, beta_end=0.02, device=device)
 
     optimizer = optim.AdamW(model.parameters(), lr=lr)
-    mse = ... # use MSE loss 
+    mse = torch.nn.MSELoss() # use MSE loss 
     
     logger = SummaryWriter(os.path.join("runs", experiment_name))
     l = len(dataloader)
@@ -83,9 +83,9 @@ def train(device='cpu', T=500, img_size=16, input_channels=3, channels=32, time_
 
             # TASK 4: implement the training loop
             t = diffusion.sample_timesteps(images.shape[0]).to(device) # line 3 from the Training algorithm
-            x_t, noise = ... # inject noise to the images (forward process), HINT: use q_sample
-            predicted_noise = ... # predict noise of x_t using the UNet
-            loss = ... # loss between noise and predicted noise
+            x_t, noise = diffusion.q_sample(images, t) # inject noise to the images (forward process), HINT: use q_sample
+            predicted_noise = model(x_t, t) # predict noise of x_t using the UNet
+            loss = mse(predicted_noise, noise) # loss between noise and predicted noise
 
             
             optimizer.zero_grad()
