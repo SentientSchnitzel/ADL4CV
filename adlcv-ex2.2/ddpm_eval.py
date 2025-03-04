@@ -1,6 +1,8 @@
 import os
 import matplotlib.pyplot as plt
 from scipy import linalg
+from scipy.linalg import sqrtm
+import numpy as np
 from tqdm import tqdm
 
 # torch
@@ -53,7 +55,22 @@ def frechet_distance(mu1, sigma1, mu2, sigma2):
     # HINT: https://docs.scipy.org/doc/scipy/reference/generated/scipy.linalg.sqrtm.html
     # Implement FID score
 
-    fid = ...
+
+    # 1) Compute the difference in means and its square norm
+    diff = mu1 - mu2
+    diff_squared = diff.dot(diff)
+
+    # 2) Compute the sqrt of the product of covariance matrices
+    covmean = sqrtm(sigma1.dot(sigma2))
+
+    # Numerical error can give slight imaginary components
+    if np.iscomplexobj(covmean):
+        covmean = covmean.real
+
+    # 3) Compute trace component
+    trace_component = np.trace(sigma1 + sigma2 - 2 * covmean)
+
+    fid = diff_squared + trace_component
 
     return fid
 

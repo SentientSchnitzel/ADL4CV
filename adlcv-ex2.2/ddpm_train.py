@@ -10,7 +10,6 @@ import torchvision.transforms as transforms
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
-
 from tqdm import tqdm
 from torch import optim
 import logging
@@ -83,13 +82,14 @@ def train(T=500, cfg=True, img_size=16, input_channels=3, channels=32,
             # Train a diffusion model with classifier-free guidance
             # Do not forget randomly discard labels
             p_uncod = 0.1
-
-            ...
-
-            t = ...
-            x_t, noise = ...
-            predicted_noise = ...
-            loss = ...
+            
+            if np.random.rand() < p_uncod:
+                labels = None
+            
+            t = torch.randint(0, T, (images.size(0),), device=device).long()
+            x_t, noise = diffusion.q_sample(images, t)
+            predicted_noise = model(x_t, t, y = labels)
+            loss = mse(predicted_noise, noise)
 
             optimizer.zero_grad()
             loss.backward()
@@ -117,8 +117,7 @@ def train(T=500, cfg=True, img_size=16, input_channels=3, channels=32,
 
         sampled_images = diffusion.p_sample_loop(model, batch_size=images.shape[0], y=y)
         save_images(images=sampled_images, path=os.path.join("results", experiment_name, f"{epoch}.jpg"),
-                    show=show, title=title)
-        
+                    show=show, title=title)      
 
 
 def main():    
