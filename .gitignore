@@ -16,3 +16,7 @@ adlcv-ex2.1/models*
 adlcv-ex2.1/dataset*
 
 adlcv-ex2.1/runs/*
+
+__pycache__*
+
+adlcv-ex2.2/weights/*

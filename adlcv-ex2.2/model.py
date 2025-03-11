@@ -133,8 +133,12 @@ class UNet(nn.Module):
         if num_classes is not None:
             # Project one-hot encoded labels to the time embedding dimension 
             # Implement it as a 2-layer MLP with a GELU activation in-between
-            # self.label_emb = ...
-            pass
+            self.label_emb = nn.Sequential(
+                nn.Linear(num_classes, time_dim),
+                nn.GELU(),
+                nn.Linear(time_dim, time_dim)
+            )
+    
             
     def forward(self, x, t, y=None):
 
@@ -143,7 +147,8 @@ class UNet(nn.Module):
 
         if y is not None:
             # Add label and time embeddings together
-            pass
+            y = self.label_emb(y)
+            t = t + y
             
         x1 = self.inc(x)
         x2 = self.down1(x1, t)
@@ -165,14 +170,7 @@ class UNet(nn.Module):
 
         return output
 
-class Classifier(nn.Module):
-    def __init__(self, img_size=16, c_in=3, labels=5, time_dim=256, device="cuda", channels=32):
-        super().__init__()
-        pass
 
-    def forward(self, x, t):
-        return
-    
 class Classifier(nn.Module):
     """
     Simple classifier that uses the UNet encoder (down + bottleneck).
@@ -199,11 +197,10 @@ class Classifier(nn.Module):
         # Bottleneck layers (optional, but often helpful)
         self.bot1  = DoubleConv(channels*4, channels*8)
         self.bot2  = DoubleConv(channels*8, channels*8)
-        self.bot3  = DoubleConv(channels*8, channels*4)
         
         # --- CLASSIFICATION HEAD ---
         # We'll do global average pooling and then a linear layer
-        self.cls_head = nn.Linear(channels*4, labels)
+        self.cls_head = nn.Linear(channels*8, labels)
 
     def forward(self, x, t):
         # t is a 1D tensor of shape (B,) – we embed it first
@@ -224,7 +221,7 @@ class Classifier(nn.Module):
         # Bottleneck
         x4 = self.bot1(x4)
         x4 = self.bot2(x4)
-        x4 = self.bot3(x4)
+        #x4 = self.bot3(x4)
 
         # --- Pool and classify ---
         # x4 is (B, C, H, W) – do global average pool over spatial dims
