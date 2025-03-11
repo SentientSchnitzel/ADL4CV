@@ -167,7 +167,7 @@ def train(device='cpu', T=500, img_size=16, input_channels=3, channels=32, time_
 
             # 2) Add noise to the images (noisy_images)
             #    Adjust depending on your actual Diffusion interface
-            noisy_images = diffusion.q_sample(images, t)
+            noisy_images,_ = diffusion.q_sample(images, t)
 
             # 3) Forward pass through classifier
             logits = model(noisy_images, t)
