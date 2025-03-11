@@ -1,0 +1,9 @@
+output_buzz
+data/
+venv/
+.safetensors/
+.cache/
+.mypy_cache/
+.ruff_cache/
+.vscode/
+.idea/
