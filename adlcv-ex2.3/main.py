@@ -53,7 +53,7 @@ CONFIG = {
     "gradient_checkpointing": True,
     "mixed_precision": "fp16",
     "seed": 42,
-    "concept_folder": "buzz", # TODO: Change this to your concept folder,  sec 1.1 Concept Preparation
+    "concept_folder": "input_concepts/concept_1", # TODO: Change this to your concept folder,  sec 1.1 Concept Preparation
 }
 # Automatically set output_dir based on concept_folder
 CONFIG["output_dir"] = "output_" + CONFIG["concept_folder"].rstrip("/") + "/"
