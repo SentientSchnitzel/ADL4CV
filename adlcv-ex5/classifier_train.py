@@ -47,9 +47,11 @@ def train(device='cpu', T=500, img_size=16, input_channels=3, channels=32, time_
     l = len(train_loader)
     logger = SummaryWriter(os.path.join("runs", exp_name))
 
+    min_train_loss = 1e10
     for epoch in pbar:
         model.train()
         batchbar = tqdm(train_loader, desc=f'Epoch {epoch}/{EPOCHS}')
+        epoch_loss = 0
         for i, (images, labels) in enumerate(batchbar):
             images = images.to(device)
             labels = labels.to(device)
@@ -69,6 +71,11 @@ def train(device='cpu', T=500, img_size=16, input_channels=3, channels=32, time_
             pbar.set_postfix(MSE=loss.item())
             logger.add_scalar("MSE", loss.item(), global_step=epoch * l + i)
 
+        epoch_loss /= l
+        if epoch_loss <= min_train_loss:
+            torch.save(model.state_dict(), os.path.join("weights", exp_name, f"model{epoch}.pth"))
+            min_train_loss = epoch_loss
+    
     # save your checkpoint in weights/classifier/model.pth
     torch.save(model.state_dict(), os.path.join("weights", exp_name, 'model.pth'))
 

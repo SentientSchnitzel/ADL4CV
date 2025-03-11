@@ -9,3 +9,8 @@ datasets
 transformers
 einops
 tensorboard
+scipy
+wandb
+lovely-tensors 
+accelerate
+filelock

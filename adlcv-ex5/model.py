@@ -196,12 +196,11 @@ class Classifier(nn.Module):
         self.down3 = Down(channels*4, channels*4,  emb_dim=time_dim)
         self.sa3 = SelfAttention(channels*4, img_size // 8)
 
-        #! MAYBE BOTTLENECK NOT PART OF ENCODER
-        self.bot1 = DoubleConv(channels*4, channels*8)
-        self.bot2 = DoubleConv(channels*8, channels*8)
-        self.bot3 = DoubleConv(channels*8, channels*4)
+        # self.bot1 = DoubleConv(channels*4, channels*8)
+        # self.bot2 = DoubleConv(channels*8, channels*8)
+        # self.bot3 = DoubleConv(channels*8, channels*4)
 
-        self.lin = nn.Linear(channels*4, labels)
+        self.lin = nn.Linear(channels*4 * (img_size//8)**2, labels)
         # self.softmax = nn.Softmax
 
     def forward(self, x, t):
@@ -216,11 +215,11 @@ class Classifier(nn.Module):
         x3 = self.sa2(x3)
         x4 = self.down3(x3, t)
         x4 = self.sa3(x4)
-        x4 = self.bot1(x4)
-        x4 = self.bot2(x4)
-        x4 = self.bot3(x4)
-
-        x = self.lin(x4)
+        # x4 = self.bot1(x4)
+        # x4 = self.bot2(x4)
+        # x4 = self.bot3(x4)
+        x = x4.flatten(start_dim=1) # Flatten from [B, C, H, W] to [B, C*H*W]
+        x = self.lin(x)
         # x = self.softmax(x)
 
         return x
