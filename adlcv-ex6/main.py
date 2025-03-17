@@ -133,15 +133,15 @@ def freeze_models(text_encoder, vae, unet):
     )
     freeze_params(params_to_freeze)
 
-def create_dataloader(batch_size, tokenizer):
+def create_dataloader(batch_size, tokenizer, config=CONFIG, repeats=100):
     """Create the training dataloader."""
     train_dataset = TextualInversionDataset(
-        data_root=CONFIG["concept_folder"],
+        data_root=config["concept_folder"],
         tokenizer=tokenizer,
         size=512,
-        placeholder_token=CONFIG["placeholder_token"],
-        repeats=100,
-        learnable_property=CONFIG["what_to_teach"],
+        placeholder_token=config["placeholder_token"],
+        repeats=repeats,
+        learnable_property=config["what_to_teach"],
         center_crop_prob=0.5,  # 50% chance of center cropping
         flip_prob=0.5,  # 50% chance of flipping
     )
@@ -393,6 +393,8 @@ def save_progress(text_encoder, placeholder_token_id, accelerator, save_path):
     learned_embeds_dict = {CONFIG["placeholder_token"]: learned_embeds.detach().cpu()}
     torch.save(learned_embeds_dict, save_path)
 
+
+
 def main():
     print(f"Starting textual inversion training...")
     print(f"Using concept images from: {CONFIG['concept_folder']}")
@@ -400,7 +402,6 @@ def main():
     
     # Set seed for reproducibility
     set_seed(CONFIG["seed"])
-    
     # Setup
     tokenizer, text_encoder, vae, unet, placeholder_token_id = setup_model_and_tokenizer(CONFIG)
     
@@ -464,7 +465,154 @@ def main():
     else:
         print("No valid images found in the concept folder to create a grid.")
 
+
+    ### 10 generated images per concept demonstrating compositional generalization
+    # get the device (cude, mps or cpu)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Device: {device}")
+    prompts = [
+        f"A {CONFIG['placeholder_token']} placed on a wooden table.",
+        f"A {CONFIG['placeholder_token']} inside a cozy living room.",
+        f"A {CONFIG['placeholder_token']} on top of a mountain.",
+        f"A {CONFIG['placeholder_token']} inside a glass jar filled with colorful marbles.",
+        f"A child holding a {CONFIG['placeholder_token']} while walking through a park.",
+        f"A {CONFIG['placeholder_token']} in outer space.",
+        f"A detailed macro shot of a {CONFIG['placeholder_token']} under a microscope.",
+        f"A surreal dreamscape with floating {CONFIG['placeholder_token']} surrounded by mist.",
+        f"A {CONFIG['placeholder_token']} in a painting inspired by Van Gogh's Starry Night.",
+        f"Looking up at a tall {CONFIG['placeholder_token']} in a dense forest.",
+    ]
+    folder_name = "compositional_generalization"
+    save_dir = os.path.join(CONFIG["output_dir"], folder_name)
+
+    os.makedirs(save_dir, exist_ok=True)
+    # Generate images for each prompt
+    generated_images = []
+    for i, prompt in enumerate(prompts):
+        # avoid if already generated
+        filename = prompt.replace(" ", "_").replace("'", "").replace(".", "") + ".png"
+        if os.path.exists(os.path.join(save_dir, filename)):
+            print(f"Skipping prompt {i+1}: '{prompt}' as it's already generated.")
+            continue
+
+
+        print(f"Generating images for prompt {i+1}: '{prompt}'")
+        result = pipeline(
+            prompt,
+            num_inference_steps=40, # TODO??
+            guidance_scale=7.5, # TODO??
+            num_images_per_prompt=1,
+        )
+        generated_image = result.images[0] if result.images else None
+        generated_images.append(generated_image)
+        if generated_image:
+            generated_image.save(os.path.join(save_dir, filename))
+
+
+    # Save the generated images as a grid
+    if len(generated_images) == 10:
+        generated_grid = image_grid(generated_images, 5, 2)
+        generated_grid_path = os.path.join(CONFIG["output_dir"],
+                                           "generated_images_grid.png")
+        generated_grid.save(generated_grid_path)
+        print(f"Generated images grid saved to {generated_grid_path}")
+
+    # load the generated images anew
+    generated_images = []
+    for image_file in os.listdir(save_dir):
+        if image_file.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.webp')):
+            image_path = os.path.join(save_dir, image_file)
+            try:
+                img = Image.open(image_path).convert('RGB')
+                generated_images.append(img)
+            except Exception as e:
+                print(f"Error loading image {image_path}: {e}")
+
+    # Compare generated with real images using FID and CLIP score
+
+    # The datasets
+    # Create datasets for real and generated images
+    real_dataloader = create_dataloader(len(concept_images),
+                                         tokenizer,
+                                         repeats=1,
+    )
+    #real_dataset = real_dataloader.dataset
+    generated_dataloader = create_dataloader(len(generated_images),
+                                             tokenizer,
+                                             config={
+                                                    "concept_folder": save_dir,
+                                                    "placeholder_token": CONFIG["placeholder_token"],
+                                                    "what_to_teach": CONFIG["what_to_teach"]
+                                             },
+                                             repeats=1,
+    )
+    #generated_dataset = generated_dataloader.dataset
     
+    # extract the images
+    real_images = []
+    for batch in real_dataloader:
+        real_images.extend(batch["pixel_values"].view(-1, 3, 512, 512))
+    real_images = torch.stack(real_images)
+    generated_images = []
+    for batch in generated_dataloader:
+        generated_images.extend(batch["pixel_values"].view(-1, 3, 512, 512))
+    generated_images = torch.stack(generated_images)
+
+    # Calculate FID
+    from eval_func import VGG, vgg_transform, get_features, feature_statistics, frechet_distance
+    vgg_model = VGG()
+    vgg_model.to(device)
+    vgg_model.eval()
+    vgg_model.load_state_dict(torch.load('weights/vgg-sprites/model.pth', map_location=device))
+    dims = 256 # vgg feature dim
+
+    # for real
+    real_images = torch.stack([vgg_transform(np.array(img, dtype=np.float32)) for img in real_images])
+    real_images = real_images.to(device)
+    real_images = real_images.view(-1, 3, 512, 512)
+    real_features = get_features(vgg_model, real_images)
+    mu_real, sigma_real = feature_statistics(real_features)
+
+    # for generated
+    generated_images = torch.stack([vgg_transform(np.array(img, dtype=np.float32)) for img in generated_images])
+    # convert to correct device
+    generated_images = generated_images.to(device)
+    generated_images = generated_images.view(-1, 3, 512, 512)
+    generated_features = get_features(vgg_model, generated_images)
+    mu_gen, sigma_gen = feature_statistics(generated_features)
+
+    fid = frechet_distance(mu_real, sigma_real, mu_gen, sigma_gen)
+    print(f"FID: {fid:.4f}")
+    
+
+    # CLIP score
+    from eval_func import calculate_clip_score
+    # Initialize device and model
+    from transformers import CLIPProcessor, CLIPModel
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    clip_model = CLIPModel.from_pretrained("openai/clip-vit-base-patch16").to(device)
+    processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch16")
+
+    # Calculate CLIP score
+    clip_scores = []
+    print(generated_images.shape)
+    for i, prompt in enumerate(prompts):
+        # get the image
+        img = generated_images[i]
+        # add batch dimension
+        img = img.unsqueeze(0)
+        score = calculate_clip_score(img, prompt, clip_model, processor, device)
+        clip_scores.append(score)
+
+    print(f"CLIP scores: {np.mean(clip_scores)}")
+
+    # save the FID and CLIP scores as txt
+    with open(os.path.join(CONFIG["output_dir"], "scores.txt"), "w") as f:
+        f.write(f"FID: {fid:.4f}\n")
+        f.write(f"CLIP scores: {np.mean(clip_scores)}\n")
+
+
+    raise NotImplementedError("TODO: Implement the rest of the main function")
 
     # 1.3 Concept Generation
     #  INSTRUCTIONS:
