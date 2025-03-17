@@ -39,21 +39,23 @@ logging.basicConfig(
 )
 logger = get_logger(__name__, log_level="INFO")
 
+
+
 CONFIG = {
     "pretrained_model": "stabilityai/stable-diffusion-2",
     "what_to_teach": "object",  # Choose between "object" or "style"
-    "placeholder_token": "<my-concept>",  # The token you'll use to trigger your concept
+    "placeholder_token": "<my-concept>",  # The token you'll use to trigger your concept #TODO: should this be changed for each concept? or can be standalone.
     "initializer_token": "toy",  # A word that describes your concept
     "learning_rate": 5e-04,
     "scale_lr": True,  
     "max_train_steps": 500,  # should be 2000
-    "save_steps": 250,
+    "save_steps": 100, # 1.2 says save every 100 iterations (originally 250)
     "train_batch_size": 4,
     "gradient_accumulation_steps": 1,
     "gradient_checkpointing": True,
     "mixed_precision": "fp16",
     "seed": 42,
-    "concept_folder": "buzz", # TODO: Change this to your concept folder,  sec 1.1 Concept Preparation
+    "concept_folder": "ring", # DONE-TODO: Change this to your concept folder,  sec 1.1 Concept Preparation
 }
 # Automatically set output_dir based on concept_folder
 CONFIG["output_dir"] = "output_" + CONFIG["concept_folder"].rstrip("/") + "/"
@@ -234,7 +236,115 @@ def training_function(text_encoder, vae, unet, tokenizer, placeholder_token_id):
    ### Refer to the main.py file for implementation details
    # ...
    #########################################################
+    """
+    what should we experiment with? (hyperparams)
+    lr
+    bs
+    optim
+    dropout
+    num_diff_steps
+    noise schedule
     
+    EXTRA TASKS MISSING
+    Train 3 embedding vectors (check corrsponding loss curves showing convergence) 
+    and include 10 generated images per concept demonstrating compositional generalization. 
+    Compare two training configurations (e.g., η = 1e-3 vs 5e-4) 
+    with quantitative metrics (FID, CLIP-score).
+    """
+
+    for epoch in range(num_train_epochs):
+        text_encoder.train()  # we only train the embedding
+
+        for i, batch in enumerate(train_dataloader):
+            # Each batch is a dict with "pixel_values" and "input_ids"
+            with accelerator.accumulate(text_encoder):
+                # Convert images to latent space
+                with torch.no_grad():
+                    latents = vae.encode(batch["pixel_values"].to(accelerator.device, dtype=weight_dtype)).latent_dist.sample()
+                    latents = latents * 0.18215  # recommended scaling for stable diffusion
+
+                # Sample a random timestep for each image
+                timesteps = torch.randint(
+                    0,
+                    noise_scheduler.config.num_train_timesteps,
+                    (latents.shape[0],),
+                    device=latents.device
+                ).long()
+
+                # Add noise
+                noise = torch.randn_like(latents)
+                noisy_latents = noise_scheduler.add_noise(latents, noise, timesteps)
+
+                # Get text embeddings
+                # Only the embedding for <my-concept> is trainable
+                encoder_hidden_states = text_encoder(batch["input_ids"])[0]
+                encoder_hidden_states = encoder_hidden_states.to(unet.dtype)
+
+                # Predict the noise residual with UNet
+                model_pred = unet(
+                    noisy_latents,
+                    timesteps,
+                    encoder_hidden_states=encoder_hidden_states
+                ).sample
+
+                # Depending on the scheduler config, we may predict either noise or v
+                if noise_scheduler.config.prediction_type == "epsilon":     # default
+                    target = noise
+                elif noise_scheduler.config.prediction_type == "v_prediction":
+                    target = noise_scheduler.get_velocity(latents, noise, timesteps)
+                else:
+                    raise ValueError("Unknown prediction type")
+
+                loss = F.mse_loss(model_pred.float(), target.float(), reduction="mean")
+                # backprop on the accelerator object
+                accelerator.backward(loss)
+
+                # Gradient clipping (||∇||_2 <= 1.0)
+                accelerator.clip_grad_norm_(
+                    text_encoder.get_input_embeddings().parameters(), 1.0
+                )
+
+                optimizer.step()
+                optimizer.zero_grad()
+
+            # -------------------------
+            #   Checkpoint Saving
+            # -------------------------
+            # TODO: save at *specified* intervals - isnt this from config?
+            if (global_step + 1) % CONFIG["save_steps"] == 0 and accelerator.is_main_process:
+                # Save the embedding / text_encoder
+                ckpt_path = os.path.join(output_dir, f"embedding_ckpt_step_{global_step+1}.pt")
+                # Save *just* the embeddings or the whole text_encoder
+                torch.save(
+                    {
+                        "placeholder_token_id": placeholder_token_id,
+                        "embedding_weight": text_encoder.get_input_embeddings().weight[placeholder_token_id].detach().cpu(),
+                    },
+                    ckpt_path,
+                )
+                logger.info(f"Saved checkpoint to {ckpt_path}")
+                #####
+
+
+            global_step += 1
+            progress_bar.update(1)
+
+            if global_step >= max_train_steps:
+                # # if we break the training, we save the last model checkpoint
+                # ckpt_path = os.path.join(output_dir, f"embedding_ckpt_step_{global_step+1}.pt")
+                # torch.save(
+                #     {
+                #         "placeholder_token_id": placeholder_token_id,
+                #         "embedding_weight": text_encoder.get_input_embeddings().weight[placeholder_token_id].detach().cpu(),
+                #     },
+                #     ckpt_path,
+                # )
+                break
+
+        # seems redundant, since this loop never increases global_step
+        if global_step >= max_train_steps:
+            break
+
     logger.info(f"Training completed. Peak GPU memory usage: {peak_memory:.2f}GB")
 
 def save_progress(text_encoder, placeholder_token_id, accelerator, save_path):
@@ -263,8 +373,10 @@ def main():
     freeze_models(text_encoder, vae, unet)
     
     # Train
+    # TODO: should we really train every time? add flag for train/use pre-tuned local model.
     training_function(text_encoder, vae, unet, tokenizer, placeholder_token_id)
     
+
     # Save the final model
     pipeline = StableDiffusionPipeline.from_pretrained(
         CONFIG["pretrained_model"],
@@ -331,6 +443,97 @@ def main():
     #
     # IMPORTANT: Make sure your GPU has enough memory before running this section!
 
+    # 1.3 Concept Generation
+    print("Loading the trained pipeline from your output directory for concept generation...")
+    # We'll load it at float16 if your GPU supports that (matching your 'mixed_precision')
+    weight_dtype = torch.float16 if CONFIG["mixed_precision"] == "fp16" else torch.float32
+
+    # 1) Load the trained pipeline
+    inference_pipeline = StableDiffusionPipeline.from_pretrained(
+        CONFIG["output_dir"],
+        torch_dtype=weight_dtype
+    ).to("cuda")
+
+    # 2) Configure DPMSolverMultistepScheduler
+    dpm_scheduler = DPMSolverMultistepScheduler.from_config(inference_pipeline.scheduler.config)
+    inference_pipeline.scheduler = dpm_scheduler
+
+    # 3) Move the model to GPU: (already done by .to("cuda") above)
+
+    # 4) Create a test prompt with your placeholder token
+    prompt = f"A {CONFIG['placeholder_token']} on a sand dune."
+
+    # We'll generate images at two guidance scales to see the difference
+    guidance_scales = [7.5, 15.0]
+
+    all_images = []
+    for scale in guidance_scales:
+        print(f"Generating images at guidance_scale={scale} for prompt: '{prompt}'")
+        
+        # 5) Generate images (e.g. 2 samples)
+        result = inference_pipeline(
+            prompt,
+            num_inference_steps=40,       # tweak as desired
+            guidance_scale=scale,
+            num_images_per_prompt=2       # request 2 images
+        )
+        generated_images = result.images
+
+        # Collect them for a grid
+        all_images.extend(generated_images)
+
+    # 6) Arrange the generated images in a grid.
+    #    We have 2 images for each of the 2 scales => 4 images total.
+    grid = image_grid(all_images, rows=3, cols=10)
+    grid_path = os.path.join(CONFIG["output_dir"], "concept_generation_grid.png")
+    grid.save(grid_path)
+    print(f"Saved concept generation grid to: {grid_path}")
+
+    # 7) Compare embeddings with a 'baseline' token (e.g., "toy") using L2 and cosine similarity
+    baseline_token = "cat"  # or "cat", "dog", or any baseline you'd like to compare
+    baseline_prompt = f"A {baseline_token} on a sand dune."
+
+    # We'll define a quick helper to compare embeddings
+    def compare_prompt_embeddings(pipe, prompt1, prompt2):
+        with torch.no_grad():
+            # Tokenize
+            ids1 = pipe.tokenizer(prompt1, return_tensors="pt").input_ids.to(pipe.device)
+            ids2 = pipe.tokenizer(prompt2, return_tensors="pt").input_ids.to(pipe.device)
+
+            # Encode text
+            emb1 = pipe.text_encoder(ids1)[0].mean(dim=1)  # shape: (batch=1, hidden_dim)
+            emb2 = pipe.text_encoder(ids2)[0].mean(dim=1)
+
+            # Compute L2 distance
+            l2_dist = torch.norm(emb1 - emb2, p=2)
+            # Compute cosine similarity
+            cos_sim = F.cosine_similarity(emb1, emb2)
+
+        return l2_dist.item(), cos_sim.item()
+
+    l2_distance, cosine_sim = compare_prompt_embeddings(inference_pipeline, prompt, baseline_prompt)
+    print(f"Comparison of learned concept vs. baseline token:\n"
+        f"  Prompt1: '{prompt}'\n"
+        f"  Prompt2: '{baseline_prompt}'\n"
+        f"  L2 distance = {l2_distance:.4f}\n"
+        f"  Cosine similarity = {cosine_sim:.4f}\n")
+
+
 
 if __name__ == "__main__":
     main()
+
+    """
+    1.2 
+    train 3 embedding vectors (the 3 concepts). 10 images each
+        Ring
+        Bracelet with very small text on it
+        Something we already know should be in the training set, Mario, Sonic, etc.
+    try out 1e-3 vs 5e-4
+
+    1.3
+    Run experiments with
+        num_inference_steps: Higher values (30-50) give better quality but take longer
+        guidance_scale: Values between 7-9 typically work well
+        Try different prompts to see how your concept generalizes
+    """
