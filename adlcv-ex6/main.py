@@ -148,6 +148,26 @@ def get_gpu_memory_info():
     peak = torch.cuda.max_memory_allocated() / 1024**3  # Convert to GB
     return current, peak
 
+# to compare embeddings
+# TODO: this isnt what was asked - remove
+def compare_prompt_embeddings(pipe, prompt1, prompt2):
+    with torch.no_grad():
+        # Tokenize
+        ids1 = pipe.tokenizer(prompt1, return_tensors="pt").input_ids.to(pipe.device)
+        ids2 = pipe.tokenizer(prompt2, return_tensors="pt").input_ids.to(pipe.device)
+
+        # Encode text
+        emb1 = pipe.text_encoder(ids1)[0].mean(dim=1)  # shape: (batch=1, hidden_dim)
+        emb2 = pipe.text_encoder(ids2)[0].mean(dim=1)
+
+        # Compute L2 distance
+        l2_dist = torch.norm(emb1 - emb2, p=2)
+        # Compute cosine similarity
+        cos_sim = F.cosine_similarity(emb1, emb2)
+
+    return l2_dist.item(), cos_sim.item()
+
+
 def training_function(text_encoder, vae, unet, tokenizer, placeholder_token_id):
     train_batch_size = CONFIG["train_batch_size"]
     gradient_accumulation_steps = CONFIG["gradient_accumulation_steps"]
@@ -252,6 +272,8 @@ def training_function(text_encoder, vae, unet, tokenizer, placeholder_token_id):
     with quantitative metrics (FID, CLIP-score).
     """
 
+    losses = []
+
     for epoch in range(num_train_epochs):
         text_encoder.train()  # we only train the embedding
 
@@ -296,6 +318,7 @@ def training_function(text_encoder, vae, unet, tokenizer, placeholder_token_id):
                     raise ValueError("Unknown prediction type")
 
                 loss = F.mse_loss(model_pred.float(), target.float(), reduction="mean")
+                losses.append(loss.item())
                 # backprop on the accelerator object
                 accelerator.backward(loss)
 
@@ -344,6 +367,9 @@ def training_function(text_encoder, vae, unet, tokenizer, placeholder_token_id):
         # seems redundant, since this loop never increases global_step
         if global_step >= max_train_steps:
             break
+
+    # save the losses to output_dir
+    torch.save(losses, os.path.join(output_dir, "losses.pt"))
 
     logger.info(f"Training completed. Peak GPU memory usage: {peak_memory:.2f}GB")
 
@@ -492,24 +518,6 @@ def main():
     # 7) Compare embeddings with a 'baseline' token (e.g., "toy") using L2 and cosine similarity
     baseline_token = "cat"  # or "cat", "dog", or any baseline you'd like to compare
     baseline_prompt = f"A {baseline_token} on a sand dune."
-
-    # We'll define a quick helper to compare embeddings
-    def compare_prompt_embeddings(pipe, prompt1, prompt2):
-        with torch.no_grad():
-            # Tokenize
-            ids1 = pipe.tokenizer(prompt1, return_tensors="pt").input_ids.to(pipe.device)
-            ids2 = pipe.tokenizer(prompt2, return_tensors="pt").input_ids.to(pipe.device)
-
-            # Encode text
-            emb1 = pipe.text_encoder(ids1)[0].mean(dim=1)  # shape: (batch=1, hidden_dim)
-            emb2 = pipe.text_encoder(ids2)[0].mean(dim=1)
-
-            # Compute L2 distance
-            l2_dist = torch.norm(emb1 - emb2, p=2)
-            # Compute cosine similarity
-            cos_sim = F.cosine_similarity(emb1, emb2)
-
-        return l2_dist.item(), cos_sim.item()
 
     l2_distance, cosine_sim = compare_prompt_embeddings(inference_pipeline, prompt, baseline_prompt)
     print(f"Comparison of learned concept vs. baseline token:\n"
