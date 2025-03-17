@@ -9,6 +9,7 @@ datasets
 transformers
 einops
 tensorboard
+diffusers
 scipy
 wandb
 lovely-tensors 
