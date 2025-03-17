@@ -1,0 +1,157 @@
+Mon Mar 17 17:44:51 2025       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 570.124.06             Driver Version: 570.124.06     CUDA Version: 12.8     |
+|-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA A100-PCIE-40GB          On  |   00000000:86:00.0 Off |                    0 |
+| N/A   26C    P0             30W /  250W |       1MiB /  40960MiB |      0%   E. Process |
+|                                         |                        |             Disabled |
++-----------------------------------------+------------------------+----------------------+
+                                                                                         
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|  No running processes found                                                             |
++-----------------------------------------------------------------------------------------+
+Starting textual inversion training...
+Using concept images from: ring
+Number of concept images: 5
+Device: cuda
+
+=== Starting Dataloader Debug ===
+Number of images in dataset: 5
+
+Processing image 1: ring3.jpg
+Original dimensions: 1145x1007, Aspect ratio: 1.137
+No Crop, No Flip version saved to: output_ring/debug/debug_0_no crop_no flip.png
+Center Crop, No Flip version saved to: output_ring/debug/debug_0_center crop_no flip.png
+No Crop, Flip version saved to: output_ring/debug/debug_0_no crop_flip.png
+Center Crop, Flip version saved to: output_ring/debug/debug_0_center crop_flip.png
+
+Processing image 2: ring2.jpg
+Original dimensions: 1468x1550, Aspect ratio: 0.947
+No Crop, No Flip version saved to: output_ring/debug/debug_1_no crop_no flip.png
+Center Crop, No Flip version saved to: output_ring/debug/debug_1_center crop_no flip.png
+No Crop, Flip version saved to: output_ring/debug/debug_1_no crop_flip.png
+Center Crop, Flip version saved to: output_ring/debug/debug_1_center crop_flip.png
+
+Processing image 3: ring4.jpg
+Original dimensions: 982x886, Aspect ratio: 1.108
+No Crop, No Flip version saved to: output_ring/debug/debug_2_no crop_no flip.png
+Center Crop, No Flip version saved to: output_ring/debug/debug_2_center crop_no flip.png
+No Crop, Flip version saved to: output_ring/debug/debug_2_no crop_flip.png
+Center Crop, Flip version saved to: output_ring/debug/debug_2_center crop_flip.png
+
+Processing image 4: ring1.jpg
+Original dimensions: 1770x1667, Aspect ratio: 1.062
+No Crop, No Flip version saved to: output_ring/debug/debug_3_no crop_no flip.png
+Center Crop, No Flip version saved to: output_ring/debug/debug_3_center crop_no flip.png
+No Crop, Flip version saved to: output_ring/debug/debug_3_no crop_flip.png
+Center Crop, Flip version saved to: output_ring/debug/debug_3_center crop_flip.png
+
+Processing image 5: ring5.jpg
+Original dimensions: 784x585, Aspect ratio: 1.340
+No Crop, No Flip version saved to: output_ring/debug/debug_4_no crop_no flip.png
+Center Crop, No Flip version saved to: output_ring/debug/debug_4_center crop_no flip.png
+No Crop, Flip version saved to: output_ring/debug/debug_4_no crop_flip.png
+Center Crop, Flip version saved to: output_ring/debug/debug_4_center crop_flip.png
+
+Summary visualization saved to: output_ring/debug/debug_summary.png
+In summary image: Original | No Crop, No Flip | Center Crop, No Flip | No Crop, Flip | Center Crop, Flip
+
+=== Dataloader Debug Complete ===
+
+Creating a grid of concept images...
+Concept images grid saved to output_ring/concept_images_grid.png
+Skipping prompt 1: 'A <my-concept> placed on a wooden table.' as it's already generated.
+Skipping prompt 2: 'A <my-concept> inside a cozy living room.' as it's already generated.
+Skipping prompt 3: 'A <my-concept> on top of a mountain.' as it's already generated.
+Skipping prompt 4: 'A <my-concept> inside a glass jar filled with colorful marbles.' as it's already generated.
+Skipping prompt 5: 'A child holding a <my-concept> while walking through a park.' as it's already generated.
+Skipping prompt 6: 'A <my-concept> in space.' as it's already generated.
+Skipping prompt 7: 'A detailed macro shot of a <my-concept> under a microscope.' as it's already generated.
+Skipping prompt 8: 'A surreal dreamscape with floating <my-concept> surrounded by mist.' as it's already generated.
+Skipping prompt 9: 'A <my-concept> in a painting inspired by Van Gogh's Starry Night.' as it's already generated.
+Skipping prompt 10: 'Looking up at a tall <my-concept> in a dense forest.' as it's already generated.
+FID: 458.3168
+
+------------------------------------------------------------
+Sender: LSF System <lsfadmin@hpc.dtu.dk>
+Subject: Job 24458667: <ex6> in cluster <dcc> Exited
+
+Job <ex6> was submitted from host <hpclogin1> by user <s194262> in cluster <dcc> at Mon Mar 17 17:21:55 2025
+Job was executed on host(s) <n-62-12-21>, in queue <gpua100>, as user <s194262> in cluster <dcc> at Mon Mar 17 17:44:49 2025
+</zhome/96/8/147177> was used as the home directory.
+</work3/s194262/GitHub/ADL4CV/adlcv-ex6> was used as the working directory.
+Started at Mon Mar 17 17:44:49 2025
+Terminated at Mon Mar 17 17:46:12 2025
+Results reported at Mon Mar 17 17:46:12 2025
+
+Your job looked like:
+
+------------------------------------------------------------
+# LSBATCH: User input
+#!/bin/sh 
+
+### -- set the job Name --
+#BSUB -J ex6
+### -- specify files --
+#BSUB -o /work3/s194262/GitHub/ADL4CV/adlcv-ex6/hpc_logs/ex6-%J.out
+#BSUB -e /work3/s194262/GitHub/ADL4CV/adlcv-ex6/hpc_logs/ex6-%J.err
+
+### General options
+### –- specify queue --
+# possible: gpuv100, gpua100, gpua10, gpua40
+#BSUB -q gpua100
+### -- ask for number of cores (default: 1) --
+#BSUB -n 1
+### -- Select the resources: 1 gpu in exclusive process mode --
+#BSUB -gpu "num=1:mode=exclusive_process"
+### -- set walltime limit: hh:mm --  maximum 24 hours for GPU-queues right now
+#BSUB -W 00:30
+### -- request _ GB of system-memory --
+#BSUB -R "rusage[mem=4GB]"
+#BSUB -R "span[hosts=1]"
+
+
+nvidia-smi
+module load cuda/11.8
+
+source /work3/s194262/adv_dl_cv/bin/activate
+
+cd /work3/s194262/GitHub/ADL4CV/adlcv-ex6
+
+
+# default train
+python main.py --config
+
+------------------------------------------------------------
+
+Exited with exit code 1.
+
+Resource usage summary:
+
+    CPU time :                                   24.42 sec.
+    Max Memory :                                 2965 MB
+    Average Memory :                             2058.33 MB
+    Total Requested Memory :                     4096.00 MB
+    Delta Memory :                               1131.00 MB
+    Max Swap :                                   -
+    Max Processes :                              4
+    Max Threads :                                11
+    Run time :                                   83 sec.
+    Turnaround time :                            1457 sec.
+
+The output (if any) is above this job summary.
+
+
+
+PS:
+
+Read file </work3/s194262/GitHub/ADL4CV/adlcv-ex6/hpc_logs/ex6-24458667.err> for stderr output of this job.
+

@@ -1,0 +1,34 @@
+Loaded module: cuda/11.8
+The new embeddings will be initialized from a multivariate normal distribution that has old embeddings' mean and covariance. As described in this article: https://nlp.stanford.edu/~johnhew/vocab-expansion.html. To disable this, use `mean_resizing=False`
+Loading pipeline components...:   0%|          | 0/6 [00:00<?, ?it/s]Loading pipeline components...:  33%|███▎      | 2/6 [00:00<00:00, 12.32it/s]Loading pipeline components...:  67%|██████▋   | 4/6 [00:00<00:00, 10.29it/s]Loading pipeline components...: 100%|██████████| 6/6 [00:01<00:00,  3.72it/s]Loading pipeline components...: 100%|██████████| 6/6 [00:01<00:00,  4.52it/s]
+/work3/s194262/GitHub/ADL4CV/adlcv-ex6/main.py:562: DeprecationWarning: __array__ implementation doesn't accept a copy keyword, so passing copy=False failed. __array__ must implement 'dtype' and 'copy' keyword arguments. To learn more, see the migration guide https://numpy.org/devdocs/numpy_2_0_migration_guide.html#adapting-to-changes-in-the-copy-keyword
+  real_images = torch.stack([vgg_transform(np.array(img, dtype=np.float32)) for img in real_images])
+/work3/s194262/GitHub/ADL4CV/adlcv-ex6/main.py:569: DeprecationWarning: __array__ implementation doesn't accept a copy keyword, so passing copy=False failed. __array__ must implement 'dtype' and 'copy' keyword arguments. To learn more, see the migration guide https://numpy.org/devdocs/numpy_2_0_migration_guide.html#adapting-to-changes-in-the-copy-keyword
+  generated_images = torch.stack([vgg_transform(np.array(img, dtype=np.float32)) for img in generated_images])
+Traceback (most recent call last):
+  File "/work3/s194262/GitHub/ADL4CV/adlcv-ex6/main.py", line 690, in <module>
+    main()
+  File "/work3/s194262/GitHub/ADL4CV/adlcv-ex6/main.py", line 595, in main
+    score = calculate_clip_score(img, prompt, clip_model, processor, device)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/work3/s194262/GitHub/ADL4CV/adlcv-ex6/eval_func.py", line 86, in calculate_clip_score
+    image_input = processor(images=image, return_tensors="pt").to(device)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/work3/s194262/adv_dl_cv/lib/python3.11/site-packages/transformers/models/clip/processing_clip.py", line 109, in __call__
+    image_features = self.image_processor(images, return_tensors=return_tensors, **image_processor_kwargs)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/work3/s194262/adv_dl_cv/lib/python3.11/site-packages/transformers/image_processing_utils.py", line 41, in __call__
+    return self.preprocess(images, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/work3/s194262/adv_dl_cv/lib/python3.11/site-packages/transformers/models/clip/image_processing_clip.py", line 325, in preprocess
+    image = self.resize(image=image, size=size, resample=resample, input_data_format=input_data_format)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/work3/s194262/adv_dl_cv/lib/python3.11/site-packages/transformers/models/clip/image_processing_clip.py", line 191, in resize
+    return resize(
+           ^^^^^^^
+  File "/work3/s194262/adv_dl_cv/lib/python3.11/site-packages/transformers/image_transforms.py", line 337, in resize
+    do_rescale = _rescale_for_pil_conversion(image)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/work3/s194262/adv_dl_cv/lib/python3.11/site-packages/transformers/image_transforms.py", line 158, in _rescale_for_pil_conversion
+    raise ValueError(
+ValueError: The image to be converted to a PIL image contains values outside the range [0, 1], got [-3.0, 1.0] which cannot be converted to uint8.
