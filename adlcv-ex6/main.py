@@ -2,9 +2,12 @@ import argparse
 import itertools
 import math
 import os
+from os.path import join
 import random
 from typing import Dict, List
 import logging
+import argparse
+import yaml
 
 import numpy as np
 import torch
@@ -39,27 +42,35 @@ logging.basicConfig(
 )
 logger = get_logger(__name__, log_level="INFO")
 
-
+# add argument parser
+parser = argparse.ArgumentParser(description='ADLCV Exercise 6')
+parser.add_argument('--config', type=str, help='Path to config file (config_files/...)')
+args = parser.parse_args()
+with open(args.config, 'r') as f:
+    yaml_config = yaml.safe_load(f)
 
 CONFIG = {
     "pretrained_model": "stabilityai/stable-diffusion-2",
     "what_to_teach": "object",  # Choose between "object" or "style"
-    "placeholder_token": "<my-concept>",  # The token you'll use to trigger your concept #TODO: should this be changed for each concept? or can be standalone.
-    "initializer_token": "toy",  # A word that describes your concept
-    "learning_rate": 5e-04,
+    "placeholder_token": yaml_config['concept'],  # The token you'll use to trigger your concept #DONE-changes with each TODO: should this be changed for each concept? or can be standalone.
+    "initializer_token": yaml_config['init_token'],  # A word that describes your concept # DONE-needed to help it learn about new object TODO dafuq we need this for?
+    "learning_rate": yaml_config['learning_rate'],  # 1e-3, 5e-4
     "scale_lr": True,  
-    "max_train_steps": 500,  # should be 2000
+    "max_train_steps": yaml_config['max_train_steps'],  # 500, should be 2000
     "save_steps": 100, # 1.2 says save every 100 iterations (originally 250)
     "train_batch_size": 4,
     "gradient_accumulation_steps": 1,
     "gradient_checkpointing": True,
     "mixed_precision": "fp16",
     "seed": 42,
-    "concept_folder": "ring", # DONE-TODO: Change this to your concept folder,  sec 1.1 Concept Preparation
+    "concept_folder": yaml_config['concept'], # DONE-TODO: Change this to your concept folder,  sec 1.1 Concept Preparation
+    "mode": yaml_config['mode'],
 }
 # Automatically set output_dir based on concept_folder
-CONFIG["output_dir"] = "output_" + CONFIG["concept_folder"].rstrip("/") + "/"
-os.makedirs(CONFIG["concept_folder"], exist_ok=True)
+lr_str = str(CONFIG["learning_rate"]).replace(".", "_")
+CONFIG["output_dir"] = join("outputs", "output_" + CONFIG["concept_folder"], f"lr_{lr_str}")
+
+# os.makedirs(CONFIG["concept_folder"], exist_ok=True) # why make it if it needs to be filled???
 os.makedirs(CONFIG["output_dir"], exist_ok=True)
 
 if not os.listdir(CONFIG["concept_folder"]):
@@ -149,7 +160,7 @@ def get_gpu_memory_info():
     return current, peak
 
 # to compare embeddings
-# TODO: this isnt what was asked - remove
+# TODO: this isnt what was asked - remove?
 def compare_prompt_embeddings(pipe, prompt1, prompt2):
     with torch.no_grad():
         # Tokenize
@@ -333,7 +344,7 @@ def training_function(text_encoder, vae, unet, tokenizer, placeholder_token_id):
             # -------------------------
             #   Checkpoint Saving
             # -------------------------
-            # TODO: save at *specified* intervals - isnt this from config?
+            # DONE TODO: save at *specified* intervals - isnt this from config?
             if (global_step + 1) % CONFIG["save_steps"] == 0 and accelerator.is_main_process:
                 # Save the embedding / text_encoder
                 ckpt_path = os.path.join(output_dir, f"embedding_ckpt_step_{global_step+1}.pt")
@@ -369,6 +380,7 @@ def training_function(text_encoder, vae, unet, tokenizer, placeholder_token_id):
             break
 
     # save the losses to output_dir
+    # TODO: update to either be standalone or with FID / CLIP-score
     torch.save(losses, os.path.join(output_dir, "losses.pt"))
 
     logger.info(f"Training completed. Peak GPU memory usage: {peak_memory:.2f}GB")
@@ -400,19 +412,26 @@ def main():
     
     # Train
     # TODO: should we really train every time? add flag for train/use pre-tuned local model.
-    training_function(text_encoder, vae, unet, tokenizer, placeholder_token_id)
-    
+    if CONFIG['mode'] == 'train':
+        training_function(text_encoder, vae, unet, tokenizer, placeholder_token_id)
+        
+        # Save the final model
+        pipeline = StableDiffusionPipeline.from_pretrained(
+            CONFIG["pretrained_model"],
+            text_encoder=text_encoder,
+            tokenizer=tokenizer,
+            vae=vae,
+            unet=unet,
+        )
+        pipeline.save_pretrained(CONFIG["output_dir"])
+        print(f"Training completed. Model saved to {CONFIG['output_dir']}")
 
-    # Save the final model
-    pipeline = StableDiffusionPipeline.from_pretrained(
-        CONFIG["pretrained_model"],
-        text_encoder=text_encoder,
-        tokenizer=tokenizer,
-        vae=vae,
-        unet=unet,
-    )
-    pipeline.save_pretrained(CONFIG["output_dir"])
-    print(f"Training completed. Model saved to {CONFIG['output_dir']}")
+    # check for no pretrained model in output_dir
+    else:
+        if not os.path.exists(CONFIG["output_dir"]):
+            raise ValueError(f"No trained model found in {CONFIG['output_dir']}. Please train first.")
+        else:
+            print(f"Using pre-trained model from {CONFIG['output_dir']}")
 
     # Copy concept folder images as a grid in the output folder
     print("Creating a grid of concept images...")
@@ -496,12 +515,12 @@ def main():
     for scale in guidance_scales:
         print(f"Generating images at guidance_scale={scale} for prompt: '{prompt}'")
         
-        # 5) Generate images (e.g. 2 samples)
+        # 5) Generate images
         result = inference_pipeline(
             prompt,
-            num_inference_steps=40,       # tweak as desired
+            num_inference_steps=50,       # tweak as desired
             guidance_scale=scale,
-            num_images_per_prompt=2       # request 2 images
+            num_images_per_prompt=10       # need 10 images per concept
         )
         generated_images = result.images
 
@@ -510,7 +529,7 @@ def main():
 
     # 6) Arrange the generated images in a grid.
     #    We have 2 images for each of the 2 scales => 4 images total.
-    grid = image_grid(all_images, rows=3, cols=10)
+    grid = image_grid(all_images, rows=2, cols=10)
     grid_path = os.path.join(CONFIG["output_dir"], "concept_generation_grid.png")
     grid.save(grid_path)
     print(f"Saved concept generation grid to: {grid_path}")
