@@ -1,0 +1,6 @@
+numpy
+matplotlib
+tqdm
+tensorboard
+einops
+scipy
